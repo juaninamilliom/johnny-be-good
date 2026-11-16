@@ -59,10 +59,13 @@ export class JevJudge implements Judge {
     const apiKey = this.opts.apiKey ?? process.env.TYPESAFE_API_KEY;
     if (!apiKey) throw new Error("TYPESAFE_API_KEY is not set");
     let mod: { TypeSafeClient: new (cfg: { apiKey: string }) => SystemOneClient };
+    // Loaded by a runtime specifier: the SDK is optional and needs Node 22, and this file
+    // uses its own SystemOneClient type, so the build must not depend on it being present.
+    const specifier = "@typesafe-ai/sdk";
     try {
-      mod = (await import("@typesafe-ai/sdk")) as unknown as typeof mod;
+      mod = (await import(specifier)) as typeof mod;
     } catch {
-      throw new Error("@typesafe-ai/sdk is not installed (npm install @typesafe-ai/sdk)");
+      throw new Error("@typesafe-ai/sdk is not installed (npm install @typesafe-ai/sdk; it needs Node 22 or newer)");
     }
     this.client = new mod.TypeSafeClient({ apiKey });
     return this.client;

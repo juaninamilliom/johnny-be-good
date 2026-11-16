@@ -50,7 +50,8 @@ ollama pull llama3.1      # optional: the default local LLM judge
 
 The Jev and Anthropic SDKs are optional dependencies and install with it. Set
 `TYPESAFE_API_KEY` to turn on the Jev tier, and `ANTHROPIC_API_KEY` (or an `ant auth login`
-profile) to use `--llm anthropic`. Node 20 or newer.
+profile) to use `--llm anthropic`. Node 20 or newer; the Jev tier needs Node 22, which
+its SDK requires.
 
 ## Status
 
