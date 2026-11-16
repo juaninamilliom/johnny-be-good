@@ -20,7 +20,7 @@ describe("matchers", () => {
     expect(match(5, { gte: 3, lt: 6 }).ok).toBe(true);
     expect(match(7, { gte: 3, lt: 6 })).toEqual({ ok: false, why: "7 is not lt 6" });
     expect(match(undefined, { exists: true }).ok).toBe(false);
-    expect(match("Lisbon, CA", { regex: "^Oak", contains: "CA" }).ok).toBe(true);
+    expect(match("Lisbon, PT", { regex: "^Lis", contains: "PT" }).ok).toBe(true);
   });
 });
 
@@ -88,6 +88,14 @@ describe("expectedFindings", () => {
     const r = runAssertion(trace({ final }), AssertionSchema.parse({ expectedFindings: spec }));
     expect(r.passed).toBe(true);
     expect(r.detail).toContain("recall 2/3 (67%), 0 false positive(s) of 2 reported; missed: null-deref");
+  });
+
+  it("minFound counts instead of a fraction", () => {
+    const final = '{"findings":[{"file":"src/pager.ts","line":14},{"file":"src/cache.ts","line":9}]}';
+    const strict = ExpectedFindingsSchema.parse({ ...spec, minRecall: 0.67 });
+    expect(runAssertion(trace({ final }), AssertionSchema.parse({ expectedFindings: strict })).passed).toBe(false);
+    const counted = ExpectedFindingsSchema.parse({ ...spec, minFound: 2 });
+    expect(runAssertion(trace({ final }), AssertionSchema.parse({ expectedFindings: counted })).passed).toBe(true);
   });
 
   it("fails visibly when the answer has no JSON", () => {

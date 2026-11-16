@@ -17,7 +17,10 @@ export const ExpectedFindingsSchema = z
     expected: z
       .array(z.object({ id: z.string(), file: z.string(), line: z.number().int().positive(), window: z.number().int().nonnegative().optional() }).strict())
       .min(1),
+    /** Pass when at least this fraction of seeded findings is found. Ignored when `minFound` is set. */
     minRecall: z.number().min(0).max(1).default(1),
+    /** Pass when at least this many seeded findings are found. Clearer than a fraction like 0.67. */
+    minFound: z.number().int().nonnegative().optional(),
     maxFalsePositives: z.number().int().nonnegative().optional(),
   })
   .strict();
@@ -53,7 +56,8 @@ export function scoreFindings(reported: Array<{ file: string; line: number }>, s
 }
 
 export function checkExpectedFindings(trace: Trace, spec: ExpectedFindings): AssertionResult {
-  const label = `expectedFindings ${spec.expected.length} seeded, recall ≥ ${spec.minRecall}${spec.maxFalsePositives !== undefined ? `, ≤ ${spec.maxFalsePositives} false positives` : ""}`;
+  const bar = spec.minFound !== undefined ? `found ≥ ${spec.minFound}` : `recall ≥ ${spec.minRecall}`;
+  const label = `expectedFindings ${spec.expected.length} seeded, ${bar}${spec.maxFalsePositives !== undefined ? `, ≤ ${spec.maxFalsePositives} false positives` : ""}`;
   const doc = extractJson(trace.final ?? "");
   if (doc === undefined) return { kind: "expectedFindings", label, passed: false, detail: "final answer has no JSON" };
   const raw = Array.isArray(doc) ? doc : getPath(doc, spec.path);
@@ -62,7 +66,8 @@ export function checkExpectedFindings(trace: Trace, spec: ExpectedFindings): Ass
     .map((f) => ({ file: getPath(f, spec.fileKey), line: Number(getPath(f, spec.lineKey)) }))
     .filter((f): f is { file: string; line: number } => typeof f.file === "string" && Number.isFinite(f.line));
   const s = scoreFindings(reported, spec);
-  const passed = s.recall >= spec.minRecall && (spec.maxFalsePositives === undefined || s.falsePositives <= spec.maxFalsePositives);
+  const enough = spec.minFound !== undefined ? s.matched.length >= spec.minFound : s.recall >= spec.minRecall;
+  const passed = enough && (spec.maxFalsePositives === undefined || s.falsePositives <= spec.maxFalsePositives);
   const detail =
     `recall ${s.matched.length}/${spec.expected.length} (${(s.recall * 100).toFixed(0)}%), ${s.falsePositives} false positive(s) of ${s.reported} reported` +
     (s.missed.length ? `; missed: ${s.missed.join(", ")}` : "");

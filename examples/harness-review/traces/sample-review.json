@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "id": "sample-review",
+  "meta": { "note": "Hand-written sample to show offline scoring. It is not the output of a real review run." },
+  "task": "Run /harness:review on the uncommitted changes in this repository.",
+  "steps": [
+    { "type": "tool_call", "id": "c1", "name": "Bash", "args": { "command": "git diff" }, "result": { "content": "diff --git a/src/pager.ts ...", "isError": false } },
+    { "type": "tool_call", "id": "c2", "name": "Read", "args": { "file_path": "src/cache.ts" }, "result": { "content": "...", "isError": false } }
+  ],
+  "final": "Review complete.\n```json\n{\"findings\": [{\"file\": \"src/pager.ts\", \"line\": 11, \"claim\": \"start skips the first page: current * size should be (current - 1) * size\"}, {\"file\": \"src/cache.ts\", \"line\": 6, \"claim\": \"load() is not awaited, so a Promise is cached as the value\"}, {\"file\": \"src/pager.ts\", \"line\": 3, \"claim\": \"page should be readonly\"}]}\n```",
+  "usage": { "inputTokens": 0, "outputTokens": 0, "cacheReadTokens": 0, "cacheWriteTokens": 0 }
+}

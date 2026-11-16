@@ -1,0 +1,30 @@
+suite: weather-agent
+# Judges: Jev first when TYPESAFE_API_KEY is set, then a local Ollama model.
+judges:
+  llm: { provider: ollama, model: llama3.1 }
+defaults:
+  expect:
+    - maxToolCalls: 5
+    - noToolErrors: true
+cases:
+  - id: lisbon
+    task: What is the weather in Lisbon?
+    traces: [traces/good.jsonl, traces/wrong-tool.jsonl]
+    expect:
+      - toolCalled: get_weather
+        args: { city: Lisbon }
+        times: { max: 1 }
+      - toolNotCalled: send_email
+      - final: { regex: "\\d+°F" }
+    rubric:
+      - id: answers-the-question
+        kind: noul
+        question: Does the final answer tell the user the current weather in the city they asked about?
+      - id: grounded
+        kind: score
+        question: Is every fact in the final answer supported by a tool result in the run?
+        criteria:
+          - States facts no tool returned
+          - Mostly supported, with an unsupported detail
+          - Every fact comes from a tool result
+        pass: 1.5

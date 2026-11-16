@@ -1,0 +1,30 @@
+suite: harness-review
+# Scores a code review against three bugs seeded in fixture/change (diffed against fixture/base).
+# Online: `tracecheck run suite.yaml --runs 3` runs the review three times and reports pass^3.
+# A graph review costs on the order of 1M tokens per run; the loop review costs far less.
+# Offline: `tracecheck score suite.yaml` scores the hand-written sample in traces/.
+adapter:
+  kind: command
+  command: ./run-review.sh
+  timeoutMs: 1800000
+judges:
+  jev: false
+  llm: false
+cases:
+  - id: loop-review
+    task: >-
+      Run /harness:review on the uncommitted changes in this repository. When it finishes,
+      print the confirmed findings as one JSON code block shaped like
+      {"findings": [{"file": "src/x.ts", "line": 12, "claim": "..."}]}.
+    traces: [traces/sample-review.json]
+    expect:
+      - expectedFindings:
+          window: 3
+          expected:
+            - { id: pager-off-by-one, file: src/pager.ts, line: 11 }
+            - { id: users-null-deref, file: src/users.ts, line: 15 }
+            - { id: cache-missing-await, file: src/cache.ts, line: 6 }
+          minFound: 2
+          maxFalsePositives: 1
+      - toolNotCalled: Write
+      - toolNotCalled: Edit
