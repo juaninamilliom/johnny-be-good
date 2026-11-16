@@ -4,19 +4,40 @@
   "description": "Evaluate AI agents by what they did: deterministic checks on tool-call traces, then a calibrated judge cascade.",
   "type": "module",
   "license": "MIT",
-  "bin": { "tracecheck": "./dist/cli/main.js" },
+  "bin": {
+    "tracecheck": "./dist/cli/main.js"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "files": ["dist", "README.md", "LICENSE"],
-  "engines": { "node": ">=20" },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "npm run typecheck && npm test"
   },
-  "keywords": ["agents", "evals", "llm", "mcp", "claude-code", "tool-calling", "llm-as-judge"],
+  "keywords": [
+    "agents",
+    "evals",
+    "llm",
+    "mcp",
+    "claude-code",
+    "tool-calling",
+    "llm-as-judge"
+  ],
   "dependencies": {
     "yaml": "^2.9.1",
     "zod": "^4.6.7"
@@ -29,5 +50,9 @@
     "@types/node": "^22.20.5",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juaninamilliom/tracecheck.git"
   }
 }
