@@ -30,7 +30,7 @@ Options for score and run:
   --json              Print the results as JSON
 
 Options for import:
-  --out <file>        Write the trace here instead of stdout
+  --out <file>        Write the trace to a file (default: stdout)
   --sidechains        Keep subagent steps
 
 Exit codes: 0 passed, 1 a failure, error or regression, 2 only unjudged cases.

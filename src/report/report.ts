@@ -18,7 +18,7 @@ export interface BaselineDiff {
 /**
  * Compares a run with a saved result. A case regresses when it passed before and does
  * not now, or when its pass rate across runs dropped. Unjudged and errored cases count
- * as not passing, so a judge outage shows up as a regression instead of hiding one.
+ * as not passing, so a judge outage shows up as a regression.
  */
 export function diffBaseline(before: SuiteResult, after: SuiteResult): BaselineDiff {
   const prev = new Map(before.cases.map((c) => [c.id, c]));

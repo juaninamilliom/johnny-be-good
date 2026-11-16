@@ -4,7 +4,7 @@ import { adapterProvider, defaultSpawner, type Spawner } from "../src/adapters/a
 import { AdapterConfigSchema, CaseSchema } from "../src/suite.js";
 
 const stream = readFileSync(new URL("./fixtures/stream.jsonl", import.meta.url), "utf8");
-const kase = CaseSchema.parse({ id: "ls", task: "List files; rm -rf / # not a command" });
+const kase = CaseSchema.parse({ id: "ls", task: "List files; rm -rf / # shell text" });
 
 describe("adapters", () => {
   it("runs claude -p with the task as an argument and parses stream-json", async () => {
@@ -21,7 +21,7 @@ describe("adapters", () => {
     expect(t.meta?.exitCode).toBe(0);
   });
 
-  it("gives a command the task through the environment, never the command string", async () => {
+  it("gives a command the task through the environment", async () => {
     const provider = adapterProvider(
       AdapterConfigSchema.parse({ kind: "command", command: `node -e 'const t=process.env.TRACECHECK_TASK; console.log(JSON.stringify({id:"x",task:t,steps:[],final:t.length+""}))'` }),
       process.cwd(),

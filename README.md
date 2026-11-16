@@ -41,13 +41,29 @@ cost: agent 690 tokens · judges $0.00000
 
 ## Install
 
+tracecheck is not on npm yet. Install it from GitHub:
+
 ```bash
-npm install -g tracecheck            # or: npx tracecheck --help
-npm install -g @typesafe-ai/sdk      # optional: the Jev tier (set TYPESAFE_API_KEY)
-ollama pull llama3.1                 # optional: the default local LLM judge
+npm install -g github:juaninamilliom/tracecheck
+ollama pull llama3.1      # optional: the default local LLM judge
 ```
 
-Node 20 or newer.
+The Jev and Anthropic SDKs are optional dependencies and install with it. Set
+`TYPESAFE_API_KEY` to turn on the Jev tier, and `ANTHROPIC_API_KEY` (or an `ant auth login`
+profile) to use `--llm anthropic`. Node 20 or newer.
+
+## Status
+
+Version 0.1. What has run for real, and what has not:
+
+- The importer was checked against a real 616-call Claude Code session. Its tool-call,
+  result, error and token counts matched a `jq` count of the transcript.
+- The Ollama judge has run live with a local model, including on that session, with the
+  trace held to the judge's budget.
+- The Jev and Anthropic judges are tested against fake clients that implement their SDK
+  interfaces. Neither has been called live yet.
+- The online `harness-review` example has not been run yet. Its scoring is tested on a
+  hand-written sample.
 
 ## Quickstart
 
@@ -131,6 +147,11 @@ dot paths: `args: { "filters.0.field": status }`.
 Jev settings (`judges.jev`): `minConfidence` (default 0.6) for score and choice, and
 `unsureBand` (default `[0.3, 0.7]`) for noul. An answer inside the band escalates.
 `jev: false` or `llm: false` turns a tier off.
+
+Two notes from TypeSafe's [limitations page](https://docs.typesafe.ai/model-jaggedness/jev-1.13.md):
+Jev's score levels are weakly calibrated as numbers, so prefer `noul` and `choice` where a
+question allows it. Jev also favors the first option in a `choice`, so calibrate any choice
+question before trusting it.
 
 Judges see the trace as data. Long fields are clipped, and the clipping is marked. The LLM
 judge's prompt puts the run inside `<trace>` tags and tells it to ignore instructions it

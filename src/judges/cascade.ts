@@ -22,7 +22,8 @@ export interface CascadeResult {
 /**
  * Runs rubric questions through the judges in order. Each tier sees only the questions
  * that earlier tiers left undecided, so a cheap confident tier keeps the expensive tier
- * idle. A question no tier decides is `unjudged`: it is reported, never counted as a pass.
+ * idle. A question no tier decides is `unjudged`, and the report lists it. Unjudged counts
+ * against a pass.
  */
 export async function runCascade(trace: Trace, rubrics: Rubric[], judges: Judge[]): Promise<CascadeResult> {
   const results = new Map<string, RubricResult>(rubrics.map((r) => [r.id, { id: r.id, status: "unjudged", verdicts: [], failures: [] }]));

@@ -40,10 +40,10 @@ export const defaultSpawner: Spawner = (cmd, args, opts) =>
  * Online mode. Each run starts the agent fresh and reads the trace it prints.
  *
  * - `claude-code` runs `claude -p <task> --output-format stream-json --verbose [args]`.
- *   The task is an argument, never part of a shell string.
+ *   The task is its own argument, and no shell runs.
  * - `command` runs a shell command written in the suite. The task arrives in the
- *   TRACECHECK_TASK environment variable and on stdin, never interpolated into the
- *   command. The command prints a native trace or Claude Code stream-json.
+ *   TRACECHECK_TASK environment variable and on stdin. The command string runs exactly
+ *   as written. The command prints a native trace or Claude Code stream-json.
  */
 export function adapterProvider(cfg: AdapterConfig, baseDir: string, spawner: Spawner = defaultSpawner): TraceProvider {
   return async (c: Case, run: number) => {

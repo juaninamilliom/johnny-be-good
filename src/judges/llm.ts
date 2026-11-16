@@ -75,6 +75,10 @@ export function ollamaJudge(opts: OllamaOptions = {}): LlmJudge {
   const doFetch = opts.fetch ?? fetch;
   const transport: LlmTransport = {
     async complete(system, prompt) {
+      // Ollama's default context window is small and it truncates longer prompts without an
+      // error, so size the window from the prompt and check the token count it reports.
+      const chars = system.length + prompt.length;
+      const numCtx = Math.min(131_072, Math.max(8192, Math.ceil(chars / 3) + 2048));
       let res: Response;
       try {
         res = await doFetch(`${baseUrl}/api/chat`, {
@@ -84,7 +88,7 @@ export function ollamaJudge(opts: OllamaOptions = {}): LlmJudge {
             model,
             stream: false,
             format: z.toJSONSchema(VerdictsSchema),
-            options: { temperature: 0 },
+            options: { temperature: 0, num_ctx: numCtx },
             messages: [
               { role: "system", content: system },
               { role: "user", content: prompt },
@@ -96,6 +100,10 @@ export function ollamaJudge(opts: OllamaOptions = {}): LlmJudge {
       }
       if (!res.ok) throw new Error(`Ollama returned ${res.status}: ${(await res.text()).slice(0, 200)}`);
       const body = (await res.json()) as { message?: { content?: string }; prompt_eval_count?: number; eval_count?: number };
+      const promptTokens = body.prompt_eval_count;
+      if (promptTokens !== undefined && promptTokens < chars / 8) {
+        throw new Error(`Ollama (${model}) read ${promptTokens} prompt tokens for ${chars} characters; the prompt was likely truncated`);
+      }
       const parsed = VerdictsSchema.safeParse(JSON.parse(body.message?.content ?? "{}"));
       if (!parsed.success) throw new Error(`Ollama (${model}) returned JSON that does not match the verdict schema`);
       return { parsed: parsed.data, usage: { inputTokens: body.prompt_eval_count ?? 0, outputTokens: body.eval_count ?? 0, costUsd: 0 } };

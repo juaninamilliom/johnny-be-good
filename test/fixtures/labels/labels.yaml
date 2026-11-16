@@ -1,0 +1,4 @@
+rubrics:
+  - { id: answered, kind: noul, question: Did the agent answer? }
+items:
+  - { trace: run1.jsonl, labels: { answered: true } }

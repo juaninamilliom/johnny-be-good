@@ -40,3 +40,23 @@ describe("calibrate", () => {
     expect(r.tiers[0]).toMatchObject({ answered: 0 });
   });
 });
+
+describe("loadLabels", () => {
+  it("loads traces relative to the labels file", async () => {
+    const { loadLabels } = await import("../src/calibrate/calibrate.js");
+    const { rubrics, items } = await loadLabels(new URL("./fixtures/labels/labels.yaml", import.meta.url).pathname);
+    expect(rubrics.map((r) => r.id)).toEqual(["answered"]);
+    expect(items[0]).toMatchObject({ labels: { answered: true }, trace: { final: "The directory is empty." } });
+  });
+
+  it("rejects a label for an unknown rubric", async () => {
+    const { writeFile, mkdtemp, copyFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const { loadLabels } = await import("../src/calibrate/calibrate.js");
+    const dir = await mkdtemp(join(tmpdir(), "tc-"));
+    await copyFile(new URL("./fixtures/stream.jsonl", import.meta.url).pathname, join(dir, "r.jsonl"));
+    await writeFile(join(dir, "l.yaml"), "rubrics:\n  - { id: a, kind: noul, question: q }\nitems:\n  - { trace: r.jsonl, labels: { b: true } }\n");
+    await expect(loadLabels(join(dir, "l.yaml"))).rejects.toThrow('label for unknown rubric "b"');
+  });
+});

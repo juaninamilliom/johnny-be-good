@@ -90,7 +90,7 @@ describe("expectedFindings", () => {
     expect(r.detail).toContain("recall 2/3 (67%), 0 false positive(s) of 2 reported; missed: null-deref");
   });
 
-  it("minFound counts instead of a fraction", () => {
+  it("minFound counts matched findings", () => {
     const final = '{"findings":[{"file":"src/pager.ts","line":14},{"file":"src/cache.ts","line":9}]}';
     const strict = ExpectedFindingsSchema.parse({ ...spec, minRecall: 0.67 });
     expect(runAssertion(trace({ final }), AssertionSchema.parse({ expectedFindings: strict })).passed).toBe(false);

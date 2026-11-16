@@ -73,7 +73,9 @@ export function runAssertion(trace: Trace, a: Assertion): AssertionResult {
       kind: "noToolErrors",
       label: "noToolErrors",
       passed: errored.length === 0,
-      ...(errored.length ? { detail: errored.map((c) => `${c.name}: ${preview(c.result?.content, 80)}`).join("; ") } : {}),
+      ...(errored.length
+        ? { detail: `${errored.length} error(s): ${errored.slice(0, 5).map((c) => `${c.name}: ${preview(c.result?.content, 80)}`).join("; ")}${errored.length > 5 ? `; and ${errored.length - 5} more` : ""}` }
+        : {}),
     };
   }
 

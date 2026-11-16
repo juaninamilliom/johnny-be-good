@@ -31,7 +31,7 @@ regressions against a saved baseline.
      optional.
    - Every verdict records the tier that decided it, the confidence, and the cost.
    - An unavailable tier is skipped and the skip is recorded. A rubric that no tier
-     could answer is reported as `unjudged`, never as passed.
+     could answer is reported as `unjudged`. Unjudged counts against a pass.
 5. **Judges treat the trace as data.** The trace goes to Jev as `state`. The LLM judge
    receives the trace inside delimited data tags with an instruction to ignore any
    instructions found there. Tool results are truncated to a budget.
