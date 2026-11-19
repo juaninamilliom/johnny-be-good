@@ -1,10 +1,14 @@
+<p align="center">
+  <img src="docs/images/johnny-be-good-avatar-brindle-v1.png" width="280" alt="Johnny Be Good: a brindle pitbull in a gray suit playing a red electric guitar">
+</p>
+
 # Johnny Be Good
 
 **A terminal test runner for AI applications: check what happened, grade the answer, and see why a run failed.**
 
 Run it beside your app or against saved responses. Your production app does not need to import this package. No dashboard, hosted evaluation service or database is required. An application bridge and useful test cases are required; the tool cannot inspect an arbitrary app automatically.
 
-This project was previously named Trace Check. Existing `tracecheck` CLI usage and the `TRACECHECK_*` adapter environment contract remain supported. The GitHub repository URL is still `juaninamilliom/tracecheck`.
+This project was previously named Trace Check. Existing `tracecheck` CLI usage and the `TRACECHECK_*` adapter environment contract remain supported. The repository and checkout directory are now named `johnny-be-good`.
 
 ## Start here
 
@@ -20,8 +24,8 @@ This project was previously named Trace Check. Existing `tracecheck` CLI usage a
 Use Node.js 22+ and npm. Node 20 is the base package minimum; the optional Jev SDK needs Node 22. From a terminal:
 
 ```sh
-git clone https://github.com/juaninamilliom/tracecheck.git
-cd tracecheck
+git clone https://github.com/juaninamilliom/johnny-be-good.git
+cd johnny-be-good
 npm ci --ignore-scripts
 npm run --silent cli -- score examples/weather/suite.yaml --no-judges --verbose
 ```
@@ -146,17 +150,17 @@ Use reference material representative of your application, and ensure it is incl
 | Human-label YAML | Rubric IDs and a person's pass/fail judgments on traces | Measures judge agreement |
 | Result JSON | Statuses, assertion diagnostics, judge verdicts, metrics and available cost | Inspect results and compare a baseline |
 
-Keep non-sensitive test definitions in version control. Save local artifacts under the ignored `.tracecheck` directory, or another private location:
+Keep non-sensitive test definitions in version control. Save local artifacts under the ignored `.johnny-be-good` directory, or another private location:
 
 ```sh
-mkdir -p .tracecheck
-npm run --silent cli -- score examples/weather/suite.yaml --no-judges --out .tracecheck/weather-results.json
+mkdir -p .johnny-be-good
+npm run --silent cli -- score examples/weather/suite.yaml --no-judges --out .johnny-be-good/weather-results.json
 ```
 
 A result report and a normalized response trace are different artifacts. `--out` saves the report. To archive evidence and experiment metadata, use a **new** directory for each run:
 
 ```sh
-npm run --silent cli -- run examples/http-app/suite.yaml --no-judges --target-version demo-v1 --artifacts .tracecheck/http-001
+npm run --silent cli -- run examples/http-app/suite.yaml --no-judges --target-version demo-v1 --artifacts .johnny-be-good/http-001
 ```
 
 The directory contains `manifest.json`, `suite.json`, `report.json`, normalized trace files and per-run results. The manifest records checksums, tool version, explicit judge configuration, available dataset fingerprints and the supplied non-secret target revision. It does not capture your entire application environment or automatically pin remote model behavior. Omit secrets from `--target-version` and configuration metadata. Existing directories are refused instead of overwritten.
@@ -164,10 +168,10 @@ The directory contains `manifest.json`, `suite.json`, `report.json`, normalized 
 After stopping the app, regrade its saved responses:
 
 ```sh
-npm run --silent cli -- replay .tracecheck/http-001 --no-judges
+npm run --silent cli -- replay .johnny-be-good/http-001 --no-judges
 ```
 
-Replay verifies recorded artifacts and does not execute the saved app adapter. Judges are off by default during replay, even if provider keys exist. An explicit `--llm` or `--model` opts into regrading with a model judge and can send saved trace content to that provider. Add `--artifacts .tracecheck/http-regrade-001` to save a new experiment without modifying the original. Incomplete experiments or corrupted artifacts are rejected.
+Replay verifies recorded artifacts and does not execute the saved app adapter. Judges are off by default during replay, even if provider keys exist. An explicit `--llm` or `--model` opts into regrading with a model judge and can send saved trace content to that provider. Add `--artifacts .johnny-be-good/http-regrade-001` to save a new experiment without modifying the original. Incomplete experiments or corrupted artifacts are rejected.
 
 Capturing is opt-in: without `--artifacts`, live runs are not automatically archived. The archive contains the normalized evidence the bridge supplied—not unrecorded app internals or necessarily the original raw transcript. [Architecture and checked source map](docs/architecture.md) explains the storage boundary.
 
@@ -221,9 +225,9 @@ npm run --silent cli -- run examples/http-app/suite.yaml --runs 3 --no-judges
 For regression comparison, save a baseline and compare a later report:
 
 ```sh
-mkdir -p .tracecheck
-npm run --silent cli -- run examples/http-app/suite.yaml --no-judges --out .tracecheck/baseline.json
-npm run --silent cli -- run examples/http-app/suite.yaml --no-judges --baseline .tracecheck/baseline.json
+mkdir -p .johnny-be-good
+npm run --silent cli -- run examples/http-app/suite.yaml --no-judges --out .johnny-be-good/baseline.json
+npm run --silent cli -- run examples/http-app/suite.yaml --no-judges --baseline .johnny-be-good/baseline.json
 ```
 
 Keep dataset, application version, model, judge configuration and environment comparable before interpreting a difference. A baseline report is not an experiment-reproducibility guarantee. Uniform repetition counts are needed for a single meaningful pass-every-run metric. With mixed counts, the report labels the mixture and groups pass-every-run results by trial count rather than claiming one common pass^k.

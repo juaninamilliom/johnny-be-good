@@ -60,8 +60,8 @@ Edit [suite.yaml](suite.yaml) with representative questions and correct expectat
 Run the same command. `--runs 3` makes three live calls per case. To save a report:
 
 ```sh
-mkdir -p .tracecheck
-npm run --silent cli -- run examples/http-app/suite.yaml --no-judges --out .tracecheck/http-results.json
+mkdir -p .johnny-be-good
+npm run --silent cli -- run examples/http-app/suite.yaml --no-judges --out .johnny-be-good/http-results.json
 ```
 
 The demo disables judges. Your actual app can still call a paid model when judges are off. Tool-use, retrieval, grounding and token checks require corresponding evidence from your app; an answer-only endpoint does not reveal hidden internal actions.
@@ -79,13 +79,13 @@ One saved trace is deliberately wrong, so this exits 1. Replaying a saved respon
 While the demo app or your development app is running:
 
 ```sh
-npm run --silent cli -- run examples/http-app/suite.yaml --no-judges --target-version demo-v1 --artifacts .tracecheck/http-001
+npm run --silent cli -- run examples/http-app/suite.yaml --no-judges --target-version demo-v1 --artifacts .johnny-be-good/http-001
 ```
 
 Use a new artifact directory; existing directories are refused. Stop the app, then:
 
 ```sh
-npm run --silent cli -- replay .tracecheck/http-001 --no-judges
+npm run --silent cli -- replay .johnny-be-good/http-001 --no-judges
 ```
 
 Replay grades archived normalized responses without calling the application. It does not prove the application would produce the same response again. Default replay does not call model judges; explicitly choosing a model can send saved evidence to that judge. Artifacts can contain private answers and tool payloads; capture/redact deliberately and do not commit them to a public repository.

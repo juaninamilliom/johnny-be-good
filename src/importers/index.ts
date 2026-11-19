@@ -23,7 +23,7 @@ export function parseTrace(text: string, opts: { format?: TraceFormat; path?: st
     const source: unknown = JSON.parse(text);
     const parsed = TraceSchema.safeParse(source);
     if (!parsed.success) {
-      throw new Error(`${opts.path ?? "trace"}: not a valid tracecheck trace: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+      throw new Error(`${opts.path ?? "trace"}: not a valid Johnny Be Good trace: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
     }
     return { ...parsed.data, meta: { ...parsed.data.meta, usageProvided: hasRecordedTokenUsage(source) } };
   }

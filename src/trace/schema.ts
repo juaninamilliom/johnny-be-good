@@ -31,7 +31,7 @@ export const UsageSchema = z.object({
 });
 
 /**
- * One agent run in tracecheck's native format. Importers convert other formats into
+ * One agent run in Johnny Be Good's native format. Importers convert other formats into
  * this shape, and every assertion and judge reads only this shape.
  */
 export const TraceSchema = z.object({

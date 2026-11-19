@@ -1,6 +1,6 @@
 # Delivery scope and verification
 
-This change establishes a terminal-first evaluation workflow with explicit app integration, local evidence storage/replay, held-out judge measurement and beginner documentation. It does not certify a model or judge's quality on an application-specific dataset. The brand is Johnny Be Good; established evaluation terminology remains unchanged. The old command/environment prefix remains compatible, and the GitHub repository has not been renamed.
+This change establishes a terminal-first evaluation workflow with explicit app integration, local evidence storage/replay, held-out judge measurement and beginner documentation. It does not certify a model or judge's quality on an application-specific dataset. The brand is Johnny Be Good; established evaluation terminology remains unchanged. The old command/environment prefix remains compatible. The initial workflow PR retained the old GitHub repository name; the current repository and checkout identity are documented in README.
 
 ## Reviewed decisions
 

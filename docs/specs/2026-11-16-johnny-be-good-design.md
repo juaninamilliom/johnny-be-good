@@ -1,11 +1,11 @@
-# tracecheck: design spec
+# Johnny Be Good: design spec
 
 **Date:** 2026-11-16
 **Status:** Approved
 
 ## Purpose
 
-tracecheck evaluates AI agents by what they did. It reads an agent run as a trace of tool
+Johnny Be Good evaluates AI agents by what they did. It reads an agent run as a trace of tool
 calls, tool results, messages, and a final answer. It scores the trace against a case
 file with deterministic assertions first and a judge cascade for anything rules cannot
 check. It reports pass rates, reliability across repeated runs (pass^k), cost, and
@@ -13,7 +13,7 @@ regressions against a saved baseline.
 
 ## Decisions
 
-1. **TypeScript, ESM, Node 20+.** An npm package with a `tracecheck` CLI and a
+1. **TypeScript, ESM, Node 20+.** An npm package with a `johnny-be-good` CLI and a
    programmatic API.
 2. **One normalized trace format.** Importers convert sources into it. The first
    importers read Claude Code session transcripts (JSONL) and the stream-json output of
@@ -39,7 +39,7 @@ regressions against a saved baseline.
    through an adapter k times per case and reports pass@1 and pass^k. Adapters: a
    generic `command` adapter whose command prints a trace or stream-json, and a
    `claude-code` adapter that runs `claude -p` with stream-json output.
-7. **Calibration.** `tracecheck calibrate` takes human-labeled rubric verdicts, runs
+7. **Calibration.** `johnny-be-good calibrate` takes human-labeled rubric verdicts, runs
    each judge tier on them, and reports agreement per tier and the cascade's accuracy
    and escalation rate across a sweep of thresholds.
 8. **Baselines and CI.** Results are written as JSON. `--baseline` compares a run with
