@@ -1,232 +1,261 @@
-# tracecheck
+# Johnny Be Good
 
-[![CI](https://github.com/juaninamilliom/tracecheck/actions/workflows/ci.yml/badge.svg)](https://github.com/juaninamilliom/tracecheck/actions/workflows/ci.yml)
+**A terminal test runner for AI applications: check what happened, grade the answer, and see why a run failed.**
 
-Evaluate AI agents by what they did. tracecheck reads an agent run as a trace of tool
-calls, tool results, messages and a final answer. It checks the trace with deterministic
-assertions first. Questions that need judgment go to a judge cascade, and a cheap
-calibrated classifier answers the ones it is sure about. Only the unsure ones reach an LLM.
+Run it beside your app or against saved responses. Your production app does not need to import this package. No dashboard, hosted evaluation service or database is required. An application bridge and useful test cases are required; the tool cannot inspect an arbitrary app automatically.
 
-```
-$ tracecheck score examples/weather/suite.yaml --model qwen2.5vl:7b
-tracecheck · weather-agent · offline · judges: ollama:qwen2.5vl:7b
+This project was previously named Trace Check. Existing `tracecheck` CLI usage and the `TRACECHECK_*` adapter environment contract remain supported. The GitHub repository URL is still `juaninamilliom/tracecheck`.
 
-✗ lisbon  1/2 runs
-    run 2: ✗ toolCalled get_weather with args 1..1× — 0 matching call(s), expected 1..1; tools called: search_web
+## Start here
 
-0/1 cases passed · 1 failed
-pass@1 50% · pass^2 0% over 2 runs
-rubric: 4 questions · decided by ollama:qwen2.5vl:7b 4
-cost: agent 690 tokens · judges $0.00000
-```
+1. [Run the no-key example](#1-run-your-first-evaluation-no-keys-required).
+2. [Connect your application](#2-connect-your-application).
+3. [Define success](#3-write-test-cases-and-expected-outcomes).
+4. [Understand files and reports](#4-understand-what-is-stored).
+5. [Add a model judge](#5-add-judgment-only-where-needed).
+6. [Calibrate, compare and repeat](#6-measure-your-graders-and-detect-regressions).
 
-## Why
+## 1. Run your first evaluation (no keys required)
 
-- **Counting goes to code.** Which tools ran, in what order, with what arguments, how many
-  steps, how many tokens: these are facts in the trace. A model asked to count them can
-  get them wrong, so tracecheck checks them directly.
-- **Judges escalate by confidence.** Rubric questions go to Jev first
-  ([TypeSafe](https://docs.typesafe.ai/)), which returns calibrated probabilities for
-  about $0.04 per million input tokens. An answer stands when its confidence clears the
-  threshold. The rest escalate to an LLM judge, which is a local Ollama model by default
-  or Claude if configured. Every verdict records which tier decided it.
-- **Judges get measured.** `tracecheck calibrate` runs every tier on human-labeled
-  questions and tells you how often each one agrees with people. It also shows the
-  cheapest threshold that keeps the cascade's accuracy.
-- **Reliability is a number.** Online mode runs each case k times and reports pass^k,
-  the share of cases that pass every run. An agent that passes 80% of single runs can
-  pass far fewer cases three times in a row.
-- **Failures are visible.** A question no judge could answer is `unjudged`. It never
-  counts as a pass. A judge outage shows up in the report and in the baseline diff.
+Use Node.js 22+ and npm. Node 20 is the base package minimum; the optional Jev SDK needs Node 22. From a terminal:
 
-## Install
-
-tracecheck is not on npm yet. Install it from GitHub:
-
-```bash
-npm install -g github:juaninamilliom/tracecheck
-ollama pull llama3.1      # optional: the default local LLM judge
+```sh
+git clone https://github.com/juaninamilliom/tracecheck.git
+cd tracecheck
+npm ci --ignore-scripts
+npm run --silent cli -- score examples/weather/suite.yaml --no-judges --verbose
 ```
 
-The Jev and Anthropic SDKs are optional dependencies and install with it. Set
-`TYPESAFE_API_KEY` to turn on the Jev tier, and `ANTHROPIC_API_KEY` (or an `ant auth login`
-profile) to use `--llm anthropic`. Node 20 or newer; the Jev tier needs Node 22, which
-its SDK requires.
+`--ignore-scripts` skips the package preparation build. The checkout command runs TypeScript source through the development runner; no application build is needed. For subsequent commands, stay in the repository root. After installing the CLI package, use `johnny-be-good` in place of `npm run --silent cli --`.
 
-## Status
+The Lisbon example has two recorded runs:
 
-Version 0.1. What has run for real, and what has not:
+- The good trace called `get_weather` correctly and passes its exact checks.
+- The bad trace used `search_web` and fails the required-tool check.
+- Rubric questions stay **UNJUDGED** because `--no-judges` disables model judging.
 
-- The importer was checked against a real 616-call Claude Code session. Its tool-call,
-  result, error and token counts matched a `jq` count of the transcript.
-- The Ollama judge has run live with a local model, including on that session, with the
-  trace held to the judge's budget.
-- The Jev and Anthropic judges are tested against fake clients that implement their SDK
-  interfaces. Neither has been called live yet.
-- The online `harness-review` example has not been run yet. Its scoring is tested on a
-  hand-written sample.
+**Exit code 1 is expected here.** The example deliberately includes a failure. Passing exact checks does not mean an unjudged run fully passed. No app or model is called by this offline command; usage displayed in the trace is historical fixture data.
 
-## Quickstart
+Color is enabled for supported terminals. Use `--color always` to force it or `--color never` to disable it. `NO_COLOR` disables automatic color; an explicit color flag takes precedence. `--json` emits machine-readable results without styling or progress output.
 
-Convert a Claude Code session into a trace, or score recorded runs directly:
+## 2. Connect your application
 
-```bash
-tracecheck import ~/.claude/projects/<project>/<session>.jsonl --out trace.json
-tracecheck score examples/weather/suite.yaml
+Choose the path that matches what you can access:
+
+| Your starting point | Integration | What can be evaluated |
+| --- | --- | --- |
+| Saved responses or agent runs | Export native traces, then use `score` | Whatever the saved evidence contains |
+| An HTTP endpoint | A small command adapter calls it | Answer quality; internal behavior only if your app returns recorded steps/context |
+| An internal function or SDK | A command adapter imports and calls your function | The function output and evidence you instrument |
+| A Claude Code agent | Import its transcript or use the `claude-code` adapter | Recorded messages, tool calls/results and final answer |
+
+![How an application connects to Johnny Be Good](docs/images/app-integration.png)
+
+### Try a complete local HTTP example
+
+In terminal one:
+
+```sh
+node examples/http-app/demo-server.mjs
 ```
 
-A suite:
+In terminal two, from this repository root:
+
+```sh
+npm run --silent cli -- run examples/http-app/suite.yaml --no-judges --verbose
+```
+
+Both exact-answer tests should pass. This server is a **fictional, deterministic fixture**, not an LLM. It proves the adapter/runner wiring without provider keys or inference charges.
+
+Next, follow the [HTTP integration walkthrough](examples/http-app/README.md): point the bridge at your development endpoint, map your API's input/output fields, and replace the sample cases. The documented example contract is `POST {"input":"..."}` → `{"answer":"..."}`; it is not a universal requirement for your application. Change the bridge for your contract.
+
+The command adapter receives the task on stdin and in `TRACECHECK_TASK`; `TRACECHECK_CASE` and `TRACECHECK_RUN` identify the case and repetition. It prints one normalized trace on stdout. Application diagnostics belong on stderr. The suite's command is trusted executable configuration—do not run untrusted suites against your machine or production services.
+
+Your app can stay separate from the evaluation tool. It may run locally or remotely, but it must be reachable. A test endpoint is optional if a bridge can call an existing endpoint or internal function. No automatic instrumentation, streaming API conversion, auth setup or environment reset is implied.
+
+## 3. Write test cases and expected outcomes
+
+An eval has **an input, evidence, and a definition of success**. It does not always need one exact reference sentence.
+
+### Exact outcomes
 
 ```yaml
-suite: weather-agent
+suite: arithmetic
 judges:
-  llm: { provider: ollama, model: llama3.1 }   # Jev joins first when TYPESAFE_API_KEY is set
-defaults:
-  expect:
-    - maxToolCalls: 5
-    - noToolErrors: true
+  jev: false
+  llm: false
 cases:
-  - id: lisbon
-    task: What is the weather in Lisbon?
-    traces: [traces/good.jsonl, traces/wrong-tool.jsonl]   # offline: recorded runs
+  - id: two-plus-two
+    task: What is 2 + 2? Reply with only the number.
+    trace: traces/two-plus-two.json
     expect:
-      - toolCalled: get_weather
-        args: { city: Lisbon }
-        times: { max: 1 }
-      - toolNotCalled: send_email
-      - final: { regex: "\\d+°F" }
-    rubric:
-      - id: answers-the-question
-        kind: noul
-        question: Does the final answer tell the user the current weather in the city they asked about?
-      - id: grounded
-        kind: score
-        question: Is every fact in the final answer supported by a tool result in the run?
-        criteria: [States facts no tool returned, Mostly supported, Every fact comes from a tool result]
-        pass: 1.5
+      - final: { equals: "4" }
 ```
 
-## Commands
+A native trace for that saved response:
 
-| Command | What it does |
-|---|---|
-| `tracecheck score <suite>` | Scores recorded traces (`trace:` or `traces:` per case) |
-| `tracecheck run <suite> --runs 3` | Runs the agent through the suite's `adapter` and scores each run |
-| `tracecheck import <file>` | Converts a Claude Code transcript or `claude -p` stream-json to a trace |
-| `tracecheck calibrate <labels>` | Measures each judge tier against human labels and sweeps the thresholds |
+```json
+{
+  "version": 1,
+  "id": "two-plus-two-run-1",
+  "task": "What is 2 + 2? Reply with only the number.",
+  "steps": [],
+  "final": "4"
+}
+```
 
-Useful flags: `--baseline results.json` (regressions fail the run), `--out results.json`,
-`--only a,b`, `--no-judges`, `--llm anthropic`, `--model <name>`, `--json`, `--verbose`.
+Create the files relative to your suite and run `npm run --silent cli -- score path/to/suite.yaml --no-judges`. An empty `steps` array means no internal actions were recorded; it does not prove no actions occurred. Supply real token/cost usage when you have it. Missing or partial instrumentation is displayed as unknown/partial rather than measured zero. Numeric counters remain in the data format for compatibility; token and cost coverage are reported separately. A reported cost is not a billing guarantee.
 
-Exit codes: `0` all passed, `1` a failure, error or regression, `2` only unjudged cases
-kept the suite from passing.
+### Tool behavior
 
-## Assertions
-
-| Assertion | Passes when |
-|---|---|
-| `toolCalled: name` + `args`, `times` | The tool was called with matching arguments, `min..max` times (default at least once) |
-| `toolNotCalled: name` | The tool never ran |
-| `toolOrder: [a, b, c]` (+ `strict`) | The tools ran in this order, with other calls allowed between them (adjacent when strict) |
-| `maxToolCalls`, `maxSteps`, `maxTokens`, `maxCostUsd` | The run stayed within the budget |
-| `noToolErrors: true` (+ `except`) | No tool result was an error |
-| `final: <matcher>` | The final answer matches |
-| `expectedFindings` | Structured findings in the final answer match a list of seeded ones (recall, false positives) |
-
-A matcher is a literal (equals) or an object with any of `equals`, `contains`,
-`notContains`, `regex`, `oneOf`, `exists`, `gt`, `gte`, `lt`, `lte`. Argument matchers take
-dot paths: `args: { "filters.0.field": status }`.
-
-## Rubric questions
-
-| Kind | Answer | Passes when |
-|---|---|---|
-| `noul` | P(yes) | P(yes) ≥ `pass` (default 0.5) |
-| `score` | Expected score on `criteria`, lowest first | score ≥ `pass` |
-| `choice` | One label from `criteria` | the label is in `pass` |
-
-Jev settings (`judges.jev`): `minConfidence` (default 0.6) for score and choice, and
-`unsureBand` (default `[0.3, 0.7]`) for noul. An answer inside the band escalates.
-`jev: false` or `llm: false` turns a tier off.
-
-Two notes from TypeSafe's [limitations page](https://docs.typesafe.ai/model-jaggedness/jev-1.13.md):
-Jev's score levels are weakly calibrated as numbers, so prefer `noul` and `choice` where a
-question allows it. Jev also favors the first option in a `choice`, so calibrate any choice
-question before trusting it.
-
-Judges see the trace as data. Long fields are clipped, and the clipping is marked. The LLM
-judge's prompt puts the run inside `<trace>` tags and tells it to ignore instructions it
-finds there. That lowers the risk from a tool result that tries to instruct the grader, but
-it does not remove it.
-
-## Calibration
+When your trace contains real tool instrumentation, add assertions such as:
 
 ```yaml
-# labels.yaml: a person read each trace and decided each question
+expect:
+  - toolCalled: get_weather
+    args: { city: Lisbon }
+    times: { min: 1, max: 1 }
+  - toolNotCalled: send_email
+  - maxToolCalls: 5
+  - noToolErrors: true
+```
+
+A correct-looking final answer can still fail a required-tool or forbidden-action check. Conversely, an answer-only trace cannot support claims about hidden tools, retrieval or grounding.
+
+### Open-ended quality
+
+Use rubric questions for judgments that code cannot determine from a literal match:
+
+```yaml
+rubric:
+  - id: supported-answer
+    kind: noul
+    question: >-
+      Reference policy: refunds are allowed within 30 days with a receipt.
+      Does the answer accurately explain that policy without adding unsupported rules?
+```
+
+Use reference material representative of your application, and ensure it is included in the trace or question. `noul` is a yes/no probability-style judgment; `score` uses ordered criteria; `choice` selects a named label. These are model verdicts, not guaranteed truth. A rubric can be wrong or ambiguous—inspect disagreements with human labels.
+
+## 4. Understand what is stored
+
+| Item | Contents | How it is used |
+| --- | --- | --- |
+| Suite YAML/JSON | Tasks, assertions, rubrics, adapter and judge settings | Defines the experiment |
+| Native trace JSON / imported JSONL | App response, recorded steps and available usage | Evidence that can be scored again |
+| Human-label YAML | Rubric IDs and a person's pass/fail judgments on traces | Measures judge agreement |
+| Result JSON | Statuses, assertion diagnostics, judge verdicts, metrics and available cost | Inspect results and compare a baseline |
+
+Keep non-sensitive test definitions in version control. Save local artifacts under the ignored `.tracecheck` directory, or another private location:
+
+```sh
+mkdir -p .tracecheck
+npm run --silent cli -- score examples/weather/suite.yaml --no-judges --out .tracecheck/weather-results.json
+```
+
+A result report and a normalized response trace are different artifacts. `--out` saves the report. To archive evidence and experiment metadata, use a **new** directory for each run:
+
+```sh
+npm run --silent cli -- run examples/http-app/suite.yaml --no-judges --target-version demo-v1 --artifacts .tracecheck/http-001
+```
+
+The directory contains `manifest.json`, `suite.json`, `report.json`, normalized trace files and per-run results. The manifest records checksums, tool version, explicit judge configuration, available dataset fingerprints and the supplied non-secret target revision. It does not capture your entire application environment or automatically pin remote model behavior. Omit secrets from `--target-version` and configuration metadata. Existing directories are refused instead of overwritten.
+
+After stopping the app, regrade its saved responses:
+
+```sh
+npm run --silent cli -- replay .tracecheck/http-001 --no-judges
+```
+
+Replay verifies recorded artifacts and does not execute the saved app adapter. Judges are off by default during replay, even if provider keys exist. An explicit `--llm` or `--model` opts into regrading with a model judge and can send saved trace content to that provider. Add `--artifacts .tracecheck/http-regrade-001` to save a new experiment without modifying the original. Incomplete experiments or corrupted artifacts are rejected.
+
+Capturing is opt-in: without `--artifacts`, live runs are not automatically archived. The archive contains the normalized evidence the bridge supplied—not unrecorded app internals or necessarily the original raw transcript. [Architecture and checked source map](docs/architecture.md) explains the storage boundary.
+
+Recorded responses can contain user data, retrieved documents, credentials or private tool results. Redact deliberately before storing or sending traces to judges. Private evaluation data should not become public just because test code is in Git.
+
+## 5. Add judgment only where needed
+
+Exact assertions need no model. Rubric questions use the configured judge cascade:
+
+1. Jev can answer first when configured or when `TYPESAFE_API_KEY` is present.
+2. Uncertain questions can escalate to the configured LLM judge.
+3. Questions no judge answers remain **UNJUDGED**, never a silent pass.
+
+For a local judge, install/start Ollama separately and obtain the desired model. Then:
+
+```sh
+npm run --silent cli -- score examples/weather/suite.yaml --model llama3.1
+```
+
+The default LLM provider is Ollama. For hosted Claude judging, configure the appropriate Anthropic credentials in your process environment and select `--llm anthropic --model <accessible-model-id>`. Optional SDK installation and current model access are separate requirements. `judges: { jev: false, llm: false }` disables both tiers in a suite; `--no-judges` disables judges for a score/run command.
+
+Hosted judges receive rendered trace content, subject to the configured truncation budget. A local CLI does not mean all data stays local. Your application may also call a paid model even when evaluation judges are disabled. Configure recipients and budgets before using private traces. Prompt boundaries and clipping do not eliminate judge prompt-injection or missing-context risks.
+
+## 6. Measure your graders and detect regressions
+
+First, label examples yourself. Keep threshold-tuning data separate from final held-out checks. A tiny demonstration set can expose a bug, but cannot establish broad evaluator accuracy.
+
+```yaml
+# labels.yaml
 rubrics:
-  - { id: answered, kind: noul, question: Did the agent answer the question? }
+  - { id: answered, kind: noul, question: Did the answer address the user's question? }
 items:
-  - { trace: traces/run1.json, labels: { answered: true } }
-  - { trace: traces/run2.json, labels: { answered: false } }
+  - { trace: traces/good.json, labels: { answered: true } }
+  - { trace: traces/bad.json, labels: { answered: false } }
 ```
 
-Output on the ten-item fixture in `test/calibrate.test.ts`, where the fallback judge is
-always right:
-
-```
-$ tracecheck calibrate labels.yaml
-strictness  jev decides  jev accuracy  cascade accuracy  escalated
-      0.00           10           80%               80%         0%
-      0.10            8           88%               90%        20%
-      0.15            6          100%              100%        40%
-
-recommended: strictness 0.15 → jev: { minConfidence: 0.65, unsureBand: [0.35, 0.65] }
+```sh
+npm run --silent cli -- calibrate path/to/tuning-labels.yaml --held-out path/to/validation-labels.yaml --model llama3.1
 ```
 
-## Online mode
+Use an installed local model name in place of `llama3.1` if yours differs. Both label files must use identical rubric definitions and distinct trace IDs/content. Changing only a trace ID does not make a tuning example independent validation data. The tool chooses a threshold on the tuning split, freezes it, then evaluates held-out labels once. It reports coverage, confusion counts, disagreements, failures and sample counts. Trace-level uncertainty is reported under the stated sampling assumptions; a small or biased dataset still cannot establish general quality.
 
-```yaml
-adapter:
-  kind: claude-code            # runs: claude -p <task> --output-format stream-json --verbose
-  args: [--model, claude-sonnet-5-5]
-# or
-adapter:
-  kind: command
-  command: ./run-my-agent.sh   # gets the task in $TRACECHECK_TASK and on stdin; prints a trace
+Without `--held-out`, calibration is explicitly an in-sample exploration. Do not report a tuning recommendation as held-out accuracy or cost optimality. Pin model/configuration and record the data used. Repeatedly adjusting settings to fit the same held-out results contaminates that evaluation; use a fresh validation set after policy changes.
+
+For live application testing, repeat cases:
+
+```sh
+npm run --silent cli -- run examples/http-app/suite.yaml --runs 3 --no-judges
 ```
 
-The task is never put into a shell string. A command prints either a native trace (JSON
-with a `steps` array) or Claude Code stream-json.
+For regression comparison, save a baseline and compare a later report:
 
-## Example: scoring a code review
-
-`examples/harness-review` seeds three bugs (an off-by-one, a null dereference, a missing
-`await`) in a throwaway repo and scores a review's findings against them. It was built to
-measure [agent-harness](https://github.com/juaninamilliom/agent-harness-configs) review
-workflows:
-
-```bash
-tracecheck score examples/harness-review/suite.yaml          # the hand-written sample
-tracecheck run examples/harness-review/suite.yaml --runs 3   # three live reviews
+```sh
+mkdir -p .tracecheck
+npm run --silent cli -- run examples/http-app/suite.yaml --no-judges --out .tracecheck/baseline.json
+npm run --silent cli -- run examples/http-app/suite.yaml --no-judges --baseline .tracecheck/baseline.json
 ```
 
-## Library use
+Keep dataset, application version, model, judge configuration and environment comparable before interpreting a difference. A baseline report is not an experiment-reproducibility guarantee. Uniform repetition counts are needed for a single meaningful pass-every-run metric. With mixed counts, the report labels the mixture and groups pass-every-run results by trial count rather than claiming one common pass^k.
 
-```ts
-import { loadSuite, runSuite, recordedTraces, judgesFromConfig, formatResult } from "tracecheck";
+## Commands and exit codes
 
-const suite = await loadSuite("suite.yaml");
-const result = await runSuite(suite, { provider: recordedTraces("."), mode: "offline", judges: judgesFromConfig(suite.judges) });
-console.log(formatResult(result));
+| Command | Purpose |
+| --- | --- |
+| `score <suite>` | Grade saved traces without rerunning the application |
+| `run <suite>` | Call the suite's adapter for fresh application outputs |
+| `replay <experiment-dir>` | Regrade archived responses without rerunning the application; judges off unless explicitly selected |
+| `import <transcript> --out <file>` | Convert a Claude Code transcript to a native trace |
+| `calibrate <labels>` | Compare judges with human labels and inspect a threshold sweep |
+
+Common flags: `--verbose`, `--json`, `--only a,b`, `--runs 3`, `--concurrency 2`, `--out <report.json>`, `--baseline <report.json>`, `--no-judges`, `--llm <provider>`, `--model <id>`, `--color auto|always|never`, `--artifacts <new-dir>`, `--target-version <revision>`, and `--held-out <labels>` for calibration. Use `npm run --silent cli -- --help` for the current CLI contract. Trace paths and adapter `cwd` resolve relative to the suite; CLI output/artifact paths resolve from the terminal's current directory.
+
+For `score`, `run` and `replay`: exit **0** means all cases passed; **1** means a failure, error or regression; **2** means only unjudged cases prevented a pass. For calibration, exit **0** means the measurement completed without reported failures or unanswered held-out labels—not that a quality threshold was met. No minimum-agreement release gate is implied. The demonstration's expected failure is not an installation error.
+
+## Architecture, verification and limits
+
+![Johnny Be Good evaluation architecture](docs/images/architecture.png)
+
+[Architecture and checked source map](docs/architecture.md) explains file storage, trust boundaries, judge routing and what is not automatically captured. [Configuration reference](docs/reference.md) lists assertions, rubric types and adapter/judge options. [Technical design](docs/design.md) provides the earlier rationale. [HTTP example](examples/http-app/README.md) is the runnable integration guide. Editable SVGs live beside the PNGs.
+
+Run development checks without a build:
+
+```sh
+npm run typecheck
+npm test -- test/cli.test.ts test/report.test.ts test/runner.test.ts test/assertions.test.ts test/adapters.test.ts test/calibrate.test.ts test/heldout-calibration.test.ts test/artifacts.test.ts test/reliability.test.ts test/usage.test.ts test/http-app.test.ts
 ```
 
-A `Judge` is one method, `judge(trace, rubrics)`, so another backend can be added without
-touching the cascade.
-
-## Design
-
-[docs/design.md](docs/design.md) covers the trace model, the cascade and its failure
-rules, calibration, and the tradeoffs.
+Tests using fake clients or a fictional HTTP endpoint establish the tested caller behavior—not live provider access, model quality or production readiness. Full instrumentation, correct rubrics, representative datasets, environment isolation, versioned experiments and held-out judge validation are requirements for trustworthy use, not guarantees supplied by a colorful report.
 
 ## License
 

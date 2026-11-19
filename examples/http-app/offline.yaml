@@ -1,0 +1,9 @@
+suite: saved-arithmetic-responses
+judges:
+  jev: false
+  llm: false
+cases:
+  - id: two-plus-two
+    traces: [traces/good.json, traces/wrong.json]
+    expect:
+      - final: { equals: "4" }
