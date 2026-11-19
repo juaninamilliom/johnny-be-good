@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/johnny-be-good-avatar-brindle-v1.png" width="280" alt="Johnny Be Good: a brindle pitbull in a gray suit playing a red electric guitar">
+</p>
+
 # Johnny Be Good
 
 **A terminal test runner for AI applications: check what happened, grade the answer, and see why a run failed.**
