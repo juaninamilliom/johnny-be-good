@@ -66,7 +66,10 @@ export function runAssertion(trace: Trace, a: Assertion): AssertionResult {
 
   if ("maxToolCalls" in a) return budget("maxToolCalls", calls.length, a.maxToolCalls);
   if ("maxSteps" in a) return budget("maxSteps", trace.steps.length, a.maxSteps);
-  if ("maxTokens" in a) return budget("maxTokens", totalTokens(trace), a.maxTokens);
+  if ("maxTokens" in a) {
+    if (!trace.usage || trace.meta?.usageProvided === false) return { kind: "maxTokens", label: `maxTokens ${a.maxTokens}`, passed: false, detail: "trace has no recorded token usage" };
+    return budget("maxTokens", totalTokens(trace), a.maxTokens);
+  }
   if ("maxCostUsd" in a) {
     const cost = trace.usage.costUsd;
     if (cost === undefined) return { kind: "maxCostUsd", label: `maxCostUsd ${a.maxCostUsd}`, passed: false, detail: "trace has no cost" };

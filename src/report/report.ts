@@ -52,7 +52,7 @@ export interface ReportOptions extends TerminalOptions { verbose?: boolean; diff
 
 export function formatResult(result: SuiteResult, opts: ReportOptions = {}): string {
   const t = new Terminal(opts);
-  const out = ["", t.line([seg("tracecheck", "cyan"), seg(`  /  ${result.suite}`, "bold")]),
+  const out = ["", t.line([seg("Johnny Be Good", "cyan"), seg(`  /  ${result.suite}`, "bold")]),
     t.line([seg(result.mode === "offline" ? "OFFLINE REPLAY" : "ONLINE RUN", "muted"), seg(`    ${result.summary.cases} ${result.summary.cases === 1 ? "case" : "cases"} · ${result.summary.runs} ${result.summary.runs === 1 ? "run" : "runs"}    `, "muted"), seg(opts.judgesDisabled ? "JUDGES OFF" : `JUDGES ${result.judges.join(" → ") || "NONE"}`, result.judges.length ? "cyan" : "unjudged")]),
     "", t.rule()];
   for (const c of result.cases) out.push("", ...formatCase(c, t, opts));
@@ -65,16 +65,27 @@ export function formatResult(result: SuiteResult, opts: ReportOptions = {}): str
     seg(` · ${s.failed} failed`, s.failed ? "fail" : "muted"), seg(` · ${s.unjudged} unjudged`, s.unjudged ? "unjudged" : "muted"), seg(` · ${s.errored} errored`, s.errored ? "error" : "muted")]));
   out.push(t.line([seg("RUNS    ", "muted"), seg(`${counts("pass")} passed`, "pass"), seg(" · ", "muted"), seg(`${counts("fail")} failed`, counts("fail") ? "fail" : "muted"), seg(" · ", "muted"), seg(`${counts("unjudged")} unjudged`, counts("unjudged") ? "unjudged" : "muted"), seg(` · ${counts("error")} errored`, counts("error") ? "error" : "muted")]));
   out.push(t.line([seg("CHECKS  ", "muted"), seg(checks.length ? `${checks.filter(a => a.passed).length}/${checks.length} exact checks passed` : "No exact checks configured", !checks.length ? "muted" : checks.some(a => !a.passed) ? "fail" : "pass"), ...(s.rubricQuestions ? [seg(` · ${undecided}/${s.rubricQuestions} rubric questions unjudged`, undecided ? "unjudged" : "muted")] : [])]));
-  if (s.k > 1) out.push(t.line([seg("RELIABILITY  ", "muted"), seg(`pass@1 ${pct(s.passAt1)} · pass^${s.k} ${pct(s.passHatK)} over ${s.runs} runs`)]));
+  if (s.uniformK === false) {
+    out.push(t.line([seg("RELIABILITY  ", "muted"), seg(`Mixed trial counts (${s.trialCounts?.join(", ")}); no single pass^k`, "unjudged")]));
+    for (const group of s.byTrialCount ?? []) out.push(t.line([seg(`pass^${group.k} ${pct(group.passRate)} · ${group.allPassed}/${group.cases} cases passed every run`, "muted")], 2));
+  } else if (s.k > 1) out.push(t.line([seg("RELIABILITY  ", "muted"), seg(`pass@1 ${pct(s.passAt1)} · pass^${s.k} ${pct(s.passHatK)} over ${s.runs} runs`)]));
   if (Object.keys(s.decidedByTier).length) out.push(t.line([seg("JUDGES  ", "muted"), seg(Object.entries(s.decidedByTier).map(([tier, n]) => `${tier}: ${n} decided`).join(" · "), "cyan")]));
-  const costs = [`${s.agentTokens.toLocaleString("en-US")} ${result.mode === "offline" ? "tokens in recorded traces" : "agent tokens"}${s.agentCostUsd !== undefined ? ` ($${s.agentCostUsd.toFixed(4)})` : ""}`];
+  const usageRuns = s.agentUsageRecordedRuns ?? runs.filter(r => r.agentUsage && r.agentUsageRecorded !== false).length;
+  const costRuns = s.agentCostRecordedRuns ?? runs.filter(r => r.agentUsage?.costUsd !== undefined).length;
+  const tokens = s.agentTokens.toLocaleString("en-US");
+  const usage = usageRuns === runs.length && runs.length ? `${tokens} ${result.mode === "offline" ? "tokens in recorded traces" : "reported agent tokens"}`
+    : usageRuns === 0 ? `Token usage unknown${s.agentTokens ? ` (${tokens} partial reported tokens)` : ""}`
+    : `${tokens} reported tokens · complete counters for ${usageRuns}/${runs.length} runs (partial)`;
+  const costs = [usage];
+  if (s.agentCostUsd !== undefined) costs.push(`agent $${s.agentCostUsd.toFixed(4)}${costRuns < runs.length ? ` (${costRuns}/${runs.length} runs reported cost; partial)` : ""}`);
   if (s.judgeCostUsd !== undefined) costs.push(`judges $${s.judgeCostUsd.toFixed(5)}`);
   if (opts.judgesDisabled) costs.push("no model judge calls this run");
   out.push(t.line([seg("USAGE   ", "muted"), seg(costs.join(" · "), "muted")]));
   if (undecided) out.push("", t.line([seg(opts.judgesDisabled ? "Judges are off: passing exact checks does not mean the full eval passed." : "Unjudged questions prevent a pass. Check judge configuration and failures above.", "unjudged")]));
   if (opts.diff) {
     out.push("", t.line([seg("BASELINE", "bold")]));
-    if (!opts.diff.regressions.length && !opts.diff.fixes.length) out.push(t.line([seg("No changes", "muted")], 2));
+    if (!opts.diff.all.some(d => d.change !== "same") && !opts.diff.regressions.length && !opts.diff.fixes.length) out.push(t.line([seg("No changes", "muted")], 2));
+    for (const d of opts.diff.all.filter(d => d.change === "new" || d.change === "removed")) out.push(t.line([seg(`${d.change.toUpperCase()} ${d.id} · case coverage changed`, "unjudged")], 2));
     for (const d of opts.diff.regressions) out.push(t.line([seg(`REGRESSED ${d.id}`, "fail"), seg(`: ${d.before} → ${d.after} (pass rate ${pct(d.beforeRate ?? 0)} → ${pct(d.afterRate ?? 0)})`)], 2));
     for (const d of opts.diff.fixes) out.push(t.line([seg(`FIXED ${d.id}`, "pass"), seg(`: ${d.before} → ${d.after} (pass rate ${pct(d.beforeRate ?? 0)} → ${pct(d.afterRate ?? 0)})`)], 2));
   }

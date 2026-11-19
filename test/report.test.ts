@@ -47,6 +47,23 @@ describe("terminal report", () => {
     expect(plain.split("\n").every(line => Array.from(line).length <= 48)).toBe(true);
   });
 
+  it("does not describe added or removed case coverage as an unchanged baseline", async () => {
+    const result = await lisbon();
+    const text = formatResult(result, { diff: { regressions: [], fixes: [], all: [{id: "new-case", change: "new", after: "pass"}, {id: "removed-case", change: "removed", before: "pass"}] } });
+    expect(text).toContain("NEW new-case"); expect(text).toContain("REMOVED removed-case"); expect(text).not.toContain("No changes");
+  });
+
+  it("distinguishes unknown token usage, partial coverage and explicitly reported zero", async () => {
+    const result = await lisbon();
+    result.summary.agentUsageRecordedRuns = 0; result.summary.agentTokens = 0;
+    expect(formatResult(result)).toContain("Token usage unknown");
+    result.summary.agentUsageRecordedRuns = 1; result.summary.agentTokens = 12;
+    expect(formatResult(result)).toContain("complete counters for 1/2 runs (partial)");
+    result.summary.agentUsageRecordedRuns = 2; result.summary.agentTokens = 0;
+    const complete = formatResult(result);
+    expect(complete).toContain("0 tokens in recorded traces"); expect(complete).not.toContain("Token usage unknown");
+  });
+
   it("retains baseline failures and makes errored runs visible", async () => {
     const result = await lisbon();
     result.cases[0]!.runs[0]!.error = "Synthetic provider failure";

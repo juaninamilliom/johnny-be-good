@@ -1,21 +1,25 @@
 import { resolve } from "node:path";
 import { runAssertion, type AssertionResult } from "../assertions/assertions.js";
-import { loadTrace } from "../importers/index.js";
+import { loadTrace, hasRecordedTokenUsage } from "../importers/index.js";
 import { runCascade, type RubricResult } from "../judges/cascade.js";
 import type { Judge, JudgeUsage } from "../judges/types.js";
-import type { Case, Suite } from "../suite.js";
-import type { Trace, Usage } from "../trace/schema.js";
+import { SuiteSchema, type Case, type Suite } from "../suite.js";
+import { TraceSchema, type Trace, type Usage } from "../trace/schema.js";
+import type { ArtifactStore, FileArtifact } from "./artifacts.js";
 
 export type Status = "pass" | "fail" | "unjudged" | "error";
 
 export interface RunResult {
   run: number;
   traceId?: string;
+  traceArtifact?: FileArtifact;
   status: Status;
   error?: string;
   assertions: AssertionResult[];
   rubric: RubricResult[];
   agentUsage?: Usage;
+  /** Whether token counters were supplied by the trace producer, rather than schema defaults. */
+  agentUsageRecorded?: boolean;
   judgeUsage: Record<string, JudgeUsage>;
   durationMs?: number;
 }
@@ -37,6 +41,7 @@ export interface SuiteResult {
   judges: string[];
   cases: CaseResult[];
   summary: Summary;
+  artifacts?: { manifest: string; report: string };
 }
 
 export interface Summary {
@@ -50,8 +55,14 @@ export interface Summary {
   passAt1: number;
   /** Fraction of cases whose every run passed. */
   passHatK: number;
+  /** Uniform trial count, or 0 for mixed trial counts. */
   k: number;
+  uniformK?: boolean;
+  trialCounts?: number[];
+  byTrialCount?: Array<{ k: number; cases: number; allPassed: number; passRate: number }>;
   agentTokens: number;
+  agentUsageRecordedRuns?: number;
+  agentCostRecordedRuns?: number;
   agentCostUsd?: number;
   judgeCostUsd?: number;
   /** How many rubric questions each tier decided. */
@@ -71,6 +82,8 @@ export interface RunOptions {
   only?: string[];
   concurrency?: number;
   onRun?: (caseId: string, r: RunResult) => void;
+  /** Opt-in archive of full responses and tool payloads. */
+  artifacts?: ArtifactStore;
 }
 
 /** Offline provider: reads `trace` or `traces[run]` relative to the suite file's directory. */
@@ -89,33 +102,58 @@ export function runsFor(c: Case, suite: Suite, mode: "offline" | "online", fallb
 }
 
 export async function runSuite(suite: Suite, opts: RunOptions): Promise<SuiteResult> {
+  suite = SuiteSchema.parse(suite);
+  if (opts.mode !== "online" && opts.mode !== "offline") throw new Error("mode must be online or offline");
+  for (const [name, value] of [["concurrency", opts.concurrency], ["runs", opts.runs]] as const) if (value !== undefined && (!Number.isSafeInteger(value) || value < 1)) throw new Error(`${name} must be a positive safe integer`);
+  if (opts.only && (!opts.only.length || opts.only.some(id => !suite.cases.some(c => c.id === id)))) throw new Error("Case selection must contain existing case IDs");
   const judges = opts.judges ?? [];
+  if (new Set(judges.map(j => j.tier)).size !== judges.length) throw new Error("Judge tier names must be unique");
   const startedAt = new Date().toISOString();
-  const cases = suite.cases.filter((c) => !opts.only?.length || opts.only.includes(c.id));
+  const cases = suite.cases.filter(c => !opts.only || opts.only.includes(c.id));
   const jobs: Array<{ c: Case; run: number }> = [];
-  for (const c of cases) for (let run = 0; run < runsFor(c, suite, opts.mode, opts.runs); run++) jobs.push({ c, run });
-
-  const byCase = new Map<string, RunResult[]>(cases.map((c) => [c.id, []]));
-  await pool(jobs, opts.concurrency ?? 4, async ({ c, run }) => {
-    const r = await runOne(suite, c, run, opts.provider, judges);
-    byCase.get(c.id)!.push(r);
-    opts.onRun?.(c.id, r);
-  });
-
-  const caseResults = cases.map((c) => caseResult(c.id, byCase.get(c.id)!.sort((a, b) => a.run - b.run)));
-  return { suite: suite.suite, startedAt, mode: opts.mode, judges: judges.map((j) => j.tier), cases: caseResults, summary: summarize(caseResults) };
+  for (const c of cases) {
+    const count = runsFor(c, suite, opts.mode, opts.runs);
+    if (!Number.isSafeInteger(count) || count < 1) throw new Error("Case runs must be a positive safe integer");
+    for (let run = 0; run < count; run++) jobs.push({ c, run });
+  }
+  if (opts.artifacts) await opts.artifacts.begin(suite, opts.mode, { judges: judges.map(j => j.tier), cases: cases.map(c => ({ id: c.id, runs: runsFor(c, suite, opts.mode, opts.runs) })), concurrency: opts.concurrency ?? 4 });
+  try {
+    const byCase = new Map<string, RunResult[]>(cases.map(c => [c.id, []]));
+    await pool(jobs, opts.concurrency ?? 4, async ({ c, run }) => {
+      const r = await runOne(suite, c, run, opts.provider, judges, opts.artifacts);
+      if (opts.artifacts) await opts.artifacts.saveResult(c.id, r);
+      byCase.get(c.id)!.push(r); opts.onRun?.(c.id, r);
+    });
+    const caseResults = cases.map(c => caseResult(c.id, byCase.get(c.id)!.sort((a, b) => a.run - b.run)));
+    const result: SuiteResult = { suite: suite.suite, startedAt, mode: opts.mode, judges: judges.map(j => j.tier), cases: caseResults, summary: summarize(caseResults), ...(opts.artifacts ? { artifacts: { manifest: "manifest.json", report: "report.json" } } : {}) };
+    if (opts.artifacts) await opts.artifacts.finalize(result);
+    return result;
+  } catch (error) {
+    if (opts.artifacts) {
+      try { await opts.artifacts.abort(error); }
+      catch (persistenceError) { throw new AggregateError([error, persistenceError], "Experiment failed and its incomplete manifest could not be updated"); }
+    }
+    throw error;
+  }
 }
 
-async function runOne(suite: Suite, c: Case, run: number, provider: TraceProvider, judges: Judge[]): Promise<RunResult> {
+async function runOne(suite: Suite, c: Case, run: number, provider: TraceProvider, judges: Judge[], artifacts?: ArtifactStore): Promise<RunResult> {
   const t0 = Date.now();
   let trace: Trace;
   try {
-    trace = await provider(c, run);
+    const provided = await provider(c, run);
+    trace = TraceSchema.parse(provided);
+    trace.meta = { ...trace.meta, usageProvided: hasRecordedTokenUsage(provided) };
   } catch (err) {
     return { run, status: "error", error: err instanceof Error ? err.message : String(err), assertions: [], rubric: [], judgeUsage: {}, durationMs: Date.now() - t0 };
   }
   if (c.task && !trace.task) trace = { ...trace, task: c.task };
 
+  const traceArtifact = artifacts ? await artifacts.saveTrace(c.id, run, trace) : undefined;
+  if (trace.meta && Object.prototype.hasOwnProperty.call(trace.meta, "exitCode") && trace.meta.exitCode !== 0) {
+    return { run, traceId: trace.id, ...(traceArtifact ? { traceArtifact } : {}), status: "error", error: `Target process exited unsuccessfully (${String(trace.meta.exitCode)})`, assertions: [], rubric: [], agentUsage: trace.usage, agentUsageRecorded: trace.meta?.usageProvided !== false, judgeUsage: {}, durationMs: trace.durationMs ?? Date.now() - t0 };
+  }
+  try {
   const assertions = [...(suite.defaults?.expect ?? []), ...c.expect].map((a) => runAssertion(trace, a));
   const rubrics = [...(suite.defaults?.rubric ?? []), ...c.rubric];
   const cascade = rubrics.length ? await runCascade(trace, rubrics, judges) : { rubric: [], usageByTier: {} };
@@ -125,13 +163,18 @@ async function runOne(suite: Suite, c: Case, run: number, provider: TraceProvide
   return {
     run,
     traceId: trace.id,
+    ...(traceArtifact ? { traceArtifact } : {}),
     status: failed ? "fail" : unjudged ? "unjudged" : "pass",
     assertions,
     rubric: cascade.rubric,
     agentUsage: trace.usage,
+    agentUsageRecorded: trace.meta?.usageProvided !== false,
     judgeUsage: cascade.usageByTier,
     durationMs: trace.durationMs ?? Date.now() - t0,
   };
+  } catch (error) {
+    return { run, traceId: trace.id, ...(traceArtifact ? { traceArtifact } : {}), status: "error", error: error instanceof Error ? error.message : String(error), assertions: [], rubric: [], agentUsage: trace.usage, agentUsageRecorded: trace.meta?.usageProvided !== false, judgeUsage: {}, durationMs: Date.now() - t0 };
+  }
 }
 
 function caseResult(id: string, runs: RunResult[]): CaseResult {
@@ -175,6 +218,11 @@ export function summarize(cases: CaseResult[]): Summary {
     }
   }
   const count = (s: Status) => cases.filter((c) => c.status === s).length;
+  const trialCounts = [...new Set(cases.map(c => c.runs.length))].sort((a, b) => a - b);
+  const byTrialCount = trialCounts.map(k => {
+    const group = cases.filter(c => c.runs.length === k), allPassed = group.filter(c => c.allPassed).length;
+    return { k, cases: group.length, allPassed, passRate: group.length ? allPassed / group.length : 0 };
+  });
   return {
     cases: cases.length,
     passed: count("pass"),
@@ -184,8 +232,13 @@ export function summarize(cases: CaseResult[]): Summary {
     runs: runs.length,
     passAt1: cases.length ? cases.reduce((s, c) => s + c.passRate, 0) / cases.length : 0,
     passHatK: cases.length ? cases.filter((c) => c.allPassed).length / cases.length : 0,
-    k: cases.length ? Math.max(...cases.map((c) => c.runs.length)) : 0,
+    k: trialCounts.length === 1 ? trialCounts[0]! : 0,
+    uniformK: trialCounts.length === 1,
+    trialCounts,
+    byTrialCount,
     agentTokens,
+    agentUsageRecordedRuns: runs.filter(r => r.agentUsage && r.agentUsageRecorded !== false).length,
+    agentCostRecordedRuns: runs.filter(r => r.agentUsage?.costUsd !== undefined).length,
     ...(agentCostSeen ? { agentCostUsd: agentCost } : {}),
     ...(judgeCostSeen ? { judgeCostUsd: judgeCost } : {}),
     decidedByTier,
@@ -194,12 +247,17 @@ export function summarize(cases: CaseResult[]): Summary {
 }
 
 async function pool<T>(items: T[], size: number, fn: (item: T) => Promise<void>): Promise<void> {
-  let next = 0;
+  let next = 0, stopped = false;
   const workers = Array.from({ length: Math.min(size, items.length) }, async () => {
-    while (next < items.length) {
+    while (!stopped && next < items.length) {
       const item = items[next++]!;
-      await fn(item);
+      try { await fn(item); }
+      catch (error) { stopped = true; throw error; }
     }
   });
-  await Promise.all(workers);
+  // Drain already-started work before finalizing an incomplete manifest. No artifact writes continue after rejection.
+  const settled = await Promise.allSettled(workers);
+  const errors = settled.filter((r): r is PromiseRejectedResult => r.status === "rejected").map(r => r.reason as unknown);
+  if (errors.length === 1) throw errors[0];
+  if (errors.length) throw new AggregateError(errors, "Several experiment workers failed");
 }

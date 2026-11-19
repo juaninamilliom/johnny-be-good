@@ -9,3 +9,6 @@ export { runSuite, recordedTraces, summarize, type SuiteResult, type CaseResult,
 export { adapterProvider, type Spawner } from "./adapters/adapters.js";
 export { diffBaseline, formatResult, exitCode, type BaselineDiff } from "./report/report.js";
 export { calibrate, loadLabels, formatCalibration, type CalibrationReport } from "./calibrate/calibrate.js";
+
+export { createArtifactStore, replayExperiment, fingerprint, ArtifactStore, type ExperimentManifest, type ArtifactOptions } from "./runner/artifacts.js";
+export { calibrateHeldOut, formatHeldOutCalibration, type HeldOutCalibrationReport } from "./calibrate/calibrate.js";

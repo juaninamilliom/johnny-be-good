@@ -20,11 +20,12 @@ export function parseTrace(text: string, opts: { format?: TraceFormat; path?: st
   const format = opts.format ?? "auto";
   const id = opts.id ?? (opts.path ? basename(opts.path).replace(/\.(jsonl?|ndjson)$/, "") : undefined);
   if (format === "native" || (format === "auto" && looksNative(text))) {
-    const parsed = TraceSchema.safeParse(JSON.parse(text));
+    const source: unknown = JSON.parse(text);
+    const parsed = TraceSchema.safeParse(source);
     if (!parsed.success) {
       throw new Error(`${opts.path ?? "trace"}: not a valid tracecheck trace: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
     }
-    return parsed.data;
+    return { ...parsed.data, meta: { ...parsed.data.meta, usageProvided: hasRecordedTokenUsage(source) } };
   }
   return importClaudeCode(text, { ...(id ? { id } : {}), ...(opts.path ? { path: opts.path } : {}) });
 }
@@ -38,4 +39,15 @@ function looksNative(text: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Detect observed token fields before schema defaults turn absent usage into zero counters.
+ * Explicit false from an adapter wins; presence does not certify the producer's counting accuracy.
+ */
+export function hasRecordedTokenUsage(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const source = value as { meta?: { usageProvided?: unknown }; usage?: unknown };
+  if (source.meta?.usageProvided === false || !source.usage || typeof source.usage !== "object") return false;
+  const usage = source.usage as Record<string, unknown>;
+  return ["inputTokens", "outputTokens"].every(key => typeof usage[key] === "number" && Number.isSafeInteger(usage[key]) && usage[key] >= 0);
 }

@@ -2,3 +2,8 @@ node_modules
 dist
 .tracecheck
 *.log
+
+# Local provider credentials and private experiment data
+.env
+.env.*
+!.env.example
