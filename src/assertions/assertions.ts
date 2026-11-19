@@ -26,6 +26,8 @@ export interface AssertionResult {
   label: string;
   passed: boolean;
   detail?: string;
+  /** Optional display-only context; verdict calculation is unchanged. */
+  diagnostic?: { expected: string; actual: string };
 }
 
 export function runAssertion(trace: Trace, a: Assertion): AssertionResult {
@@ -38,11 +40,16 @@ export function runAssertion(trace: Trace, a: Assertion): AssertionResult {
     const max = a.times?.max ?? Infinity;
     const label = `toolCalled ${a.toolCalled}${a.args ? " with args" : ""}${a.times ? ` ${min}..${max === Infinity ? "∞" : max}×` : ""}`;
     const n = matching.length;
-    if (n >= min && n <= max) return { kind: "toolCalled", label, passed: true, detail: `${n} matching call(s)` };
+    const displayed = named.length ? named : calls;
+    const diagnostic = {
+      expected: `${a.toolCalled}(${displayPreview(a.args ?? {})}) · ${min}..${max === Infinity ? "∞" : max} matching calls`,
+      actual: displayed.slice(0, 3).map(c => `${c.name}(${displayPreview(c.args)})`).join("; ") + (displayed.length > 3 ? `; +${displayed.length - 3} more calls` : "") || "no tool calls",
+    };
+    if (n >= min && n <= max) return { kind: "toolCalled", label, passed: true, diagnostic, detail: `${n} matching call(s)` };
     let detail = `${n} matching call(s), expected ${min}..${max === Infinity ? "∞" : max}`;
     if (a.args && named.length > n) detail += `; closest mismatch: ${argsFailure(named[0]!, a.args)}`;
     if (named.length === 0) detail += `; tools called: ${[...new Set(calls.map((c) => c.name))].join(", ") || "none"}`;
-    return { kind: "toolCalled", label, passed: false, detail };
+    return { kind: "toolCalled", label, passed: false, detail, diagnostic };
   }
 
   if ("toolNotCalled" in a) {
@@ -111,4 +118,10 @@ function containsContiguous(names: string[], seq: string[]): boolean {
     if (seq.every((s, j) => names[start + j] === s)) return true;
   }
   return false;
+}
+
+// Presentation must not turn a valid in-memory assertion into a scoring exception.
+function displayPreview(value: unknown): string {
+  try { return preview(value, 300); }
+  catch { return "[not JSON-serializable]"; }
 }

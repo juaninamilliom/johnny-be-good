@@ -2,6 +2,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { Terminal, colorEnabled, seg, type ColorMode } from "../report/terminal.js";
 import { adapterProvider } from "../adapters/adapters.js";
 import { calibrate, formatCalibration, loadLabels } from "../calibrate/calibrate.js";
 import { judgesFromConfig } from "../judges/index.js";
@@ -27,6 +28,7 @@ Options for score and run:
   --llm <provider>    Final judge tier: ollama or anthropic (overrides the suite)
   --model <name>      Model for the final judge tier
   --verbose           Show passing checks too
+  --color <mode>      auto (default), always, or never; also applies to calibration
   --json              Print the results as JSON
 
 Options for import:
@@ -52,12 +54,18 @@ async function main(argv: string[]): Promise<number> {
       model: { type: "string" },
       verbose: { type: "boolean" },
       json: { type: "boolean" },
+      color: { type: "string" },
       sidechains: { type: "boolean" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },
     },
   });
   const [command, target] = positionals;
+  const color = values.color ?? "auto";
+  if (!["auto", "always", "never"].includes(color)) throw new Error("--color must be auto, always, or never");
+  const colorMode = color as ColorMode;
+  const presentation = { color: colorEnabled(colorMode, !!process.stdout.isTTY), width: process.stdout.columns || 100 };
+
   if (values.version) {
     const pkg = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8")) as { version: string };
     console.log(pkg.version);
@@ -90,7 +98,7 @@ async function main(argv: string[]): Promise<number> {
     const { rubrics, items } = await loadLabels(target);
     const judges = judgesFromConfig(llmOverride(undefined));
     const report = await calibrate(items, rubrics, judges);
-    console.log(values.json ? JSON.stringify(report, null, 2) : formatCalibration(report));
+    console.log(values.json ? JSON.stringify(report, null, 2) : formatCalibration(report, presentation));
     return report.failures.length ? 1 : 0;
   }
 
@@ -102,21 +110,30 @@ async function main(argv: string[]): Promise<number> {
   const provider = mode === "offline" ? recordedTraces(baseDir) : adapterProvider(suite.adapter!, baseDir);
   const judges = values["no-judges"] ? [] : judgesFromConfig(llmOverride(suite.judges));
 
-  const result = await runSuite(suite, {
-    provider,
-    mode,
-    judges,
-    ...(values.only ? { only: values.only.split(",").map((s) => s.trim()) } : {}),
-    ...(values.runs ? { runs: positiveInt(values.runs, "--runs") } : {}),
-    ...(values.concurrency ? { concurrency: positiveInt(values.concurrency, "--concurrency") } : {}),
-    onRun: (id, r) => {
-      if (!values.json) process.stderr.write(`  ${id} run ${r.run + 1}: ${r.status}\n`);
-    },
-  });
+  const progress = new Terminal({ color: colorEnabled(colorMode, !!process.stderr.isTTY), width: process.stderr.columns || 100 });
+  const interactive = !!process.stderr.isTTY && !values.json && process.env.TERM !== "dumb";
+  let completed = 0;
+  let result: SuiteResult;
+  try {
+    result = await runSuite(suite, {
+      provider,
+      mode,
+      judges,
+      ...(values.only ? { only: values.only.split(",").map((s) => s.trim()) } : {}),
+      ...(values.runs ? { runs: positiveInt(values.runs, "--runs") } : {}),
+      ...(values.concurrency ? { concurrency: positiveInt(values.concurrency, "--concurrency") } : {}),
+      onRun: (id, r) => {
+        completed++;
+        if (interactive) process.stderr.write(`\r\x1b[2K${progress.line([seg(`${completed} runs complete`, "cyan"), seg(` · ${id.replace(/[\r\n]/g, " ")} · run ${r.run + 1} `, "muted"), seg(r.status.toUpperCase(), r.status)]).split("\n")[0]}`);
+      },
+    });
+  } finally {
+    if (interactive && completed) process.stderr.write("\r\x1b[2K");
+  }
   const baseline = values.baseline ? (JSON.parse(await readFile(values.baseline, "utf8")) as SuiteResult) : undefined;
   const diff = baseline ? diffBaseline(baseline, result) : undefined;
   if (values.out) await writeFile(values.out, `${JSON.stringify(result, null, 2)}\n`);
-  console.log(values.json ? JSON.stringify(diff ? { ...result, baseline: diff } : result, null, 2) : formatResult(result, { verbose: values.verbose ?? false, ...(diff ? { diff } : {}) }));
+  console.log(values.json ? JSON.stringify(diff ? { ...result, baseline: diff } : result, null, 2) : formatResult(result, { ...presentation, judgesDisabled: values["no-judges"] ?? false, verbose: values.verbose ?? false, ...(diff ? { diff } : {}) }));
   return exitCode(result, diff);
 }
 
@@ -129,7 +146,8 @@ function positiveInt(v: string, name: string): number {
 main(process.argv.slice(2)).then(
   (code) => process.exit(code),
   (err: unknown) => {
-    console.error(`tracecheck: ${err instanceof Error ? err.message : String(err)}`);
+    const terminal = new Terminal({ color: colorEnabled("auto", !!process.stderr.isTTY), width: process.stderr.columns || 100 });
+    console.error(terminal.line([seg("tracecheck: ", "error"), seg(err instanceof Error ? err.message : String(err), "fail")]));
     process.exit(1);
   },
 );

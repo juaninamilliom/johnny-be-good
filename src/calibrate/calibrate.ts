@@ -1,3 +1,4 @@
+import { Terminal, seg, type TerminalOptions } from "../report/terminal.js";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -137,20 +138,26 @@ export async function calibrate(items: LabeledItem[], rubrics: Rubric[], judges:
   return { questions: obs.length, tiers, sweep, ...(recommended ? { recommended } : {}), failures };
 }
 
-export function formatCalibration(r: CalibrationReport): string {
-  const pct = (x: number) => `${(x * 100).toFixed(0)}%`.padStart(5);
-  const out = [`calibration · ${r.questions} labeled questions`, ""];
-  for (const t of r.tiers) out.push(`${t.tier.padEnd(28)} answered ${String(t.answered).padStart(4)} · agrees with labels ${pct(t.accuracy)}`);
+export function formatCalibration(r: CalibrationReport, opts: TerminalOptions = {}): string {
+  const t = new Terminal({ ...opts, width: opts.width ?? 120 });
+  const pct = (x: number) => `${(x * 100).toFixed(0)}%`;
+  const out = ["", t.line([seg("tracecheck", "cyan"), seg("  /  calibration", "bold")]), t.line([seg(`${r.questions} human-labeled questions · measuring judge agreement`, "muted")]), "", t.rule()];
+  for (const tier of r.tiers) out.push("", t.line([seg(tier.tier, "cyan"), seg(`  ${tier.answered} answered · ${pct(tier.accuracy)} agreement with labels`, "muted")], 2));
   if (r.sweep.length) {
-    out.push("", "strictness  jev decides  jev accuracy  cascade accuracy  escalated");
-    for (const s of r.sweep) {
-      out.push(`${s.strictness.toFixed(2).padStart(10)}  ${String(s.jevDecided).padStart(11)}  ${pct(s.jevDecidedAccuracy).padStart(12)}  ${pct(s.cascadeAccuracy).padStart(16)}  ${pct(s.escalationRate).padStart(9)}`);
+    out.push("", t.line([seg("THRESHOLD SWEEP", "bold")]));
+    if (t.width >= 90) {
+      out.push(t.line([seg("strictness  jev decides  jev accuracy  cascade accuracy  escalated", "muted")]));
+      for (const row of r.sweep) out.push(t.line([seg(`${row.strictness.toFixed(2).padStart(10)}  ${String(row.jevDecided).padStart(11)}  ${pct(row.jevDecidedAccuracy).padStart(12)}  ${pct(row.cascadeAccuracy).padStart(16)}  ${pct(row.escalationRate).padStart(9)}`, row === r.recommended ? "cyan" : "normal")]));
+    } else {
+      for (const row of r.sweep) out.push("", t.line([seg(`Strictness ${row.strictness.toFixed(2)}`, row === r.recommended ? "cyan" : "bold")], 2), t.line([seg(`Jev: ${row.jevDecided} decided · ${pct(row.jevDecidedAccuracy)} agreement`, "muted")], 4), t.line([seg(`Cascade: ${pct(row.cascadeAccuracy)} · escalated: ${pct(row.escalationRate)}`, "muted")], 4));
     }
     if (r.recommended) {
       const s = r.recommended.strictness;
-      out.push("", `recommended: strictness ${s.toFixed(2)} → jev: { minConfidence: ${(0.5 + s).toFixed(2)}, unsureBand: [${(0.5 - s).toFixed(2)}, ${(0.5 + s).toFixed(2)}] }`);
+      out.push("", t.line([seg(`recommended: strictness ${s.toFixed(2)} → jev: { minConfidence: ${(0.5 + s).toFixed(2)}, unsureBand: [${(0.5 - s).toFixed(2)}, ${(0.5 + s).toFixed(2)}] }`, "cyan")]));
+      out.push(t.line([seg("Threshold selected on these labels; verify on a separate held-out set.", "muted")]));
     }
   }
-  for (const f of r.failures) out.push(`! ${f.tier} failed: ${f.error}`);
+  for (const f of r.failures) out.push("", t.line([seg(`! ${f.tier} failed: ${f.error}`, "error")]));
+  out.push("");
   return out.join("\n");
 }
