@@ -1,7 +1,7 @@
 #!/bin/bash
 # Online adapter for the harness-review suite. Builds a throwaway git repo whose working
 # tree holds the seeded change, then runs Claude Code on it. The task arrives in
-# TRACECHECK_TASK. Prints claude's stream-json on stdout for tracecheck to score.
+# TRACECHECK_TASK. Prints claude's stream-json on stdout for Johnny Be Good to score.
 # Needs: claude on PATH with the harness plugin installed (claude plugin install harness@agent-harness).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"

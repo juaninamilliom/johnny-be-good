@@ -1,8 +1,8 @@
 suite: harness-review
 # Scores a code review against three bugs seeded in fixture/change (diffed against fixture/base).
-# Online: `tracecheck run suite.yaml --runs 3` runs the review three times and reports pass^3.
+# Online: `johnny-be-good run suite.yaml --runs 3` runs the review three times and reports pass^3.
 # A graph review costs on the order of 1M tokens per run; the loop review costs far less.
-# Offline: `tracecheck score suite.yaml` scores the hand-written sample in traces/.
+# Offline: `johnny-be-good score suite.yaml` scores the hand-written sample in traces/.
 adapter:
   kind: command
   command: ./run-review.sh

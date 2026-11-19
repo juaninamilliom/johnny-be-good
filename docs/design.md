@@ -1,4 +1,4 @@
-# tracecheck: design
+# Johnny Be Good: design
 
 ## Problem
 

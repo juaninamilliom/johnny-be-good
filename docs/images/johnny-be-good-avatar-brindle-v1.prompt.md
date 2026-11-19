@@ -16,4 +16,3 @@ Style: sophisticated illustrated brand mascot, graphic vintage 1950s rock-and-ro
 Composition: centered within a warm cream circular badge, transparent outside the badge, generous safe margins around every paw, ear and guitar tip. Strong silhouette readable at small size; keep the guitar and extended foot fully in frame. 1024x1024 square.
 Colors: warm brindle brown and black, cream, ink navy/charcoal gray suit, oxblood tie and cherry-red guitar with small brass-gold details.
 Constraints: no text, no letters, no watermarks, no bandmates, no extra props, no copied movie banner, no detailed stage scenery, no sunglasses, no extra limbs, no human face or human hair. Do not make the dog solid-colored: the BRINDLE STRIPES are essential. Actual alpha transparency outside the badge.
-
