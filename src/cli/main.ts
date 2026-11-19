@@ -7,7 +7,8 @@ import { adapterProvider } from "../adapters/adapters.js";
 import { calibrate, calibrateHeldOut, formatCalibration, formatHeldOutCalibration, loadLabels } from "../calibrate/calibrate.js";
 import { judgesFromConfig } from "../judges/index.js";
 import { diffBaseline, exitCode, formatResult } from "../report/report.js";
-import { recordedTraces, runSuite, type SuiteResult } from "../runner/runner.js";
+import { runSuite, type SuiteResult } from "../runner/runner.js";
+import { loadRecordedDataset } from "../runner/dataset.js";
 import { createArtifactStore, replayExperiment } from "../runner/artifacts.js";
 import { loadSuite, JevConfigSchema, LlmConfigSchema, type JudgesConfig } from "../suite.js";
 
@@ -138,11 +139,14 @@ async function main(argv: string[]): Promise<number> {
   if (values["held-out"]) throw new Error("--held-out is only supported by calibrate");
   if (command !== "run" && values.runs) throw new Error("--runs is only supported by run; recorded trials are preserved");
   const replay = command === "replay" ? await replayExperiment(target) : undefined;
-  const suite = replay?.suite ?? await loadSuite(target);
+  let suite = replay?.suite ?? await loadSuite(target);
   const baseDir = dirname(resolve(target));
   const mode = command === "run" ? "online" : "offline";
   if (mode === "online" && !suite.adapter) throw new Error(`${target}: "run" needs an adapter in the suite`);
-  const provider = replay?.provider ?? (mode === "offline" ? recordedTraces(baseDir) : adapterProvider(suite.adapter!, baseDir));
+  if (mode === "online" && suite.cases.some(c => c.traces && !Array.isArray(c.traces))) throw new Error("JSONL datasets are offline only; use score");
+  const dataset = mode === "offline" && !replay ? await loadRecordedDataset(suite, baseDir) : undefined;
+  if (dataset) suite = dataset.suite;
+  const provider = replay?.provider ?? dataset?.provider ?? adapterProvider(suite.adapter!, baseDir);
   // Replay starts with no judges unless explicitly selected; saved responses never silently leave the machine.
   const judgeConfig = llmOverride(replay ? { jev: false, llm: false } : suite.judges);
   const judges = values["no-judges"] ? [] : judgesFromConfig(judgeConfig);
@@ -154,7 +158,7 @@ async function main(argv: string[]): Promise<number> {
   const artifacts = values.artifacts ? await createArtifactStore(values.artifacts, {
     suite, mode, judgeConfig: effectiveJudgeConfig,
     target: { ...(values["target-version"] ? { version: values["target-version"] } : {}), ...(replay ? { replayOf: replay.manifest.suite.sha256 } : {}), applicationRevisionPinned: !!values["target-version"] },
-    datasetFiles: mode === "offline" && !replay ? suite.cases.flatMap(c => (c.traces ?? (c.trace ? [c.trace] : [])).map(p => resolve(baseDir, p))) : [],
+    datasetFiles: dataset?.datasetFiles ?? [],
   }) : undefined;
 
   const progress = new Terminal({ color: colorEnabled(colorMode, !!process.stderr.isTTY), width: process.stderr.columns || 100 });

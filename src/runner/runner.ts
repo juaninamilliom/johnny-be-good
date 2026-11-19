@@ -26,6 +26,7 @@ export interface RunResult {
 
 export interface CaseResult {
   id: string;
+  sampleSource?: Case["sampleSource"];
   status: Status;
   runs: RunResult[];
   /** Fraction of runs that passed. */
@@ -46,6 +47,8 @@ export interface SuiteResult {
 
 export interface Summary {
   cases: number;
+  datasetSamples?: number;
+  datasetPassRate?: number;
   passed: number;
   failed: number;
   unjudged: number;
@@ -89,6 +92,7 @@ export interface RunOptions {
 /** Offline provider: reads `trace` or `traces[run]` relative to the suite file's directory. */
 export function recordedTraces(baseDir: string): TraceProvider {
   return async (c, run) => {
+    if (c.traces && !Array.isArray(c.traces)) throw new Error("Use loadRecordedDataset before running JSONL suites");
     const paths = c.traces ?? (c.trace ? [c.trace] : []);
     const p = paths[run];
     if (!p) throw new Error(`case "${c.id}" has no recorded trace for run ${run + 1}`);
@@ -97,6 +101,7 @@ export function recordedTraces(baseDir: string): TraceProvider {
 }
 
 export function runsFor(c: Case, suite: Suite, mode: "offline" | "online", fallback?: number): number {
+  if (c.traces && !Array.isArray(c.traces)) throw new Error("Use loadRecordedDataset before running JSONL suites");
   if (mode === "offline") return Math.max(1, (c.traces ?? (c.trace ? [c.trace] : [])).length);
   return c.runs ?? fallback ?? suite.runs;
 }
@@ -105,11 +110,11 @@ export async function runSuite(suite: Suite, opts: RunOptions): Promise<SuiteRes
   suite = SuiteSchema.parse(suite);
   if (opts.mode !== "online" && opts.mode !== "offline") throw new Error("mode must be online or offline");
   for (const [name, value] of [["concurrency", opts.concurrency], ["runs", opts.runs]] as const) if (value !== undefined && (!Number.isSafeInteger(value) || value < 1)) throw new Error(`${name} must be a positive safe integer`);
-  if (opts.only && (!opts.only.length || opts.only.some(id => !suite.cases.some(c => c.id === id)))) throw new Error("Case selection must contain existing case IDs");
+  if (opts.only && (!opts.only.length || opts.only.some(id => !suite.cases.some(c => c.id === id || c.sampleSource?.caseId === id)))) throw new Error("Case selection must contain existing case IDs");
   const judges = opts.judges ?? [];
   if (new Set(judges.map(j => j.tier)).size !== judges.length) throw new Error("Judge tier names must be unique");
   const startedAt = new Date().toISOString();
-  const cases = suite.cases.filter(c => !opts.only || opts.only.includes(c.id));
+  const cases = suite.cases.filter(c => !opts.only || opts.only.includes(c.id) || !!c.sampleSource && opts.only.includes(c.sampleSource.caseId));
   const jobs: Array<{ c: Case; run: number }> = [];
   for (const c of cases) {
     const count = runsFor(c, suite, opts.mode, opts.runs);
@@ -124,7 +129,7 @@ export async function runSuite(suite: Suite, opts: RunOptions): Promise<SuiteRes
       if (opts.artifacts) await opts.artifacts.saveResult(c.id, r);
       byCase.get(c.id)!.push(r); opts.onRun?.(c.id, r);
     });
-    const caseResults = cases.map(c => caseResult(c.id, byCase.get(c.id)!.sort((a, b) => a.run - b.run)));
+    const caseResults = cases.map(c => ({ ...caseResult(c.id, byCase.get(c.id)!.sort((a, b) => a.run - b.run)), ...(c.sampleSource ? { sampleSource: c.sampleSource } : {}) }));
     const result: SuiteResult = { suite: suite.suite, startedAt, mode: opts.mode, judges: judges.map(j => j.tier), cases: caseResults, summary: summarize(caseResults), ...(opts.artifacts ? { artifacts: { manifest: "manifest.json", report: "report.json" } } : {}) };
     if (opts.artifacts) await opts.artifacts.finalize(result);
     return result;
@@ -218,20 +223,23 @@ export function summarize(cases: CaseResult[]): Summary {
     }
   }
   const count = (s: Status) => cases.filter((c) => c.status === s).length;
-  const trialCounts = [...new Set(cases.map(c => c.runs.length))].sort((a, b) => a - b);
+  const trials = cases.filter(c => !c.sampleSource);
+  const samples = cases.filter(c => c.sampleSource);
+  const trialCounts = [...new Set(trials.map(c => c.runs.length))].sort((a, b) => a - b);
   const byTrialCount = trialCounts.map(k => {
-    const group = cases.filter(c => c.runs.length === k), allPassed = group.filter(c => c.allPassed).length;
+    const group = trials.filter(c => c.runs.length === k), allPassed = group.filter(c => c.allPassed).length;
     return { k, cases: group.length, allPassed, passRate: group.length ? allPassed / group.length : 0 };
   });
   return {
     cases: cases.length,
+    ...(cases.some(c => c.sampleSource) ? { datasetSamples: samples.length, datasetPassRate: samples.filter(c => c.status === "pass").length / samples.length } : {}),
     passed: count("pass"),
     failed: count("fail"),
     unjudged: count("unjudged"),
     errored: count("error"),
     runs: runs.length,
-    passAt1: cases.length ? cases.reduce((s, c) => s + c.passRate, 0) / cases.length : 0,
-    passHatK: cases.length ? cases.filter((c) => c.allPassed).length / cases.length : 0,
+    passAt1: trials.length ? trials.reduce((s, c) => s + c.passRate, 0) / trials.length : 0,
+    passHatK: trials.length ? trials.filter((c) => c.allPassed).length / trials.length : 0,
     k: trialCounts.length === 1 ? trialCounts[0]! : 0,
     uniformK: trialCounts.length === 1,
     trialCounts,
