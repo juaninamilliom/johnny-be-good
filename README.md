@@ -110,6 +110,49 @@ A native trace for that saved response:
 
 Create the files relative to your suite and run `npm run --silent cli -- score path/to/suite.yaml --no-judges`. An empty `steps` array means no internal actions were recorded; it does not prove no actions occurred. Supply real token/cost usage when you have it. Missing or partial instrumentation is displayed as unknown/partial rather than measured zero. Numeric counters remain in the data format for compatibility; token and cost coverage are reported separately. A reported cost is not a billing guarantee.
 
+### Structured decisions and offline JSONL datasets
+
+Check fields in a JSON final answer or trace metadata using the existing value matchers:
+
+```yaml
+suite: saved-decisions
+judges: { jev: false, llm: false }
+cases:
+  - id: decision-rules
+    traces: { jsonl: exports/decisions.jsonl }
+    expect:
+      - field: { from: final, path: actions.0.leverage, gt: 0, lte: 5 }
+      - field: { from: meta, path: priorLossSameKey72h, equals: false }
+```
+
+Each nonblank JSONL line must be one native trace, for example:
+
+```json
+{"version":1,"id":"decision-123","steps":[],"final":"{\"actions\":[{\"leverage\":3}]}","meta":{"priorLossSameKey72h":false}}
+```
+
+Paths are relative to the suite file. Run `npm run --silent cli -- score path/to/suite.yaml --no-judges --json`.
+No model judge is called with `--no-judges`. Historical joins and database exports remain your responsibility.
+
+Field paths use dot notation, including array indexes. All matcher keys can be combined.
+Missing fields fail unless `exists: false` is specified. Invalid final JSON fails even for an absence check.
+Field checks traverse only own properties. An empty path selects the whole value.
+
+JSONL rows are independent samples, not repeated attempts at the same task. Each becomes a
+case named `<original-case-id>::line:<physical-line-number>`, with `sampleSource` recording
+the original case ID, absolute export path, and line. Valid rows retain their original `traceId`.
+`--only decision-rules` selects every row from that original case.
+Malformed rows become individual errors; blank lines are skipped. Empty or unreadable exports
+fail the command. Do not combine JSONL with `trace` or case-level `runs`. JSONL is offline only.
+
+JSON reports include `datasetSamples` and `datasetPassRate`; errors count as unsuccessful samples.
+Repeated-trial metrics exclude dataset samples, and terminal reliability output is suppressed
+for suites containing datasets. Existing single-file and explicit file-list suites retain their behavior.
+`--artifacts` archives normalized rows, per-row errors, and the export fingerprint; replay does not
+require the original JSONL file. Source paths and response excerpts can contain private information.
+
+Grouped rates, rate targets, list predicates, conditional checks, and folder globs are not included yet.
+
 ### Tool behavior
 
 When your trace contains real tool instrumentation, add assertions such as:

@@ -65,7 +65,9 @@ export function formatResult(result: SuiteResult, opts: ReportOptions = {}): str
     seg(` · ${s.failed} failed`, s.failed ? "fail" : "muted"), seg(` · ${s.unjudged} unjudged`, s.unjudged ? "unjudged" : "muted"), seg(` · ${s.errored} errored`, s.errored ? "error" : "muted")]));
   out.push(t.line([seg("RUNS    ", "muted"), seg(`${counts("pass")} passed`, "pass"), seg(" · ", "muted"), seg(`${counts("fail")} failed`, counts("fail") ? "fail" : "muted"), seg(" · ", "muted"), seg(`${counts("unjudged")} unjudged`, counts("unjudged") ? "unjudged" : "muted"), seg(` · ${counts("error")} errored`, counts("error") ? "error" : "muted")]));
   out.push(t.line([seg("CHECKS  ", "muted"), seg(checks.length ? `${checks.filter(a => a.passed).length}/${checks.length} exact checks passed` : "No exact checks configured", !checks.length ? "muted" : checks.some(a => !a.passed) ? "fail" : "pass"), ...(s.rubricQuestions ? [seg(` · ${undecided}/${s.rubricQuestions} rubric questions unjudged`, undecided ? "unjudged" : "muted")] : [])]));
-  if (s.uniformK === false) {
+  if (s.datasetSamples) {
+    out.push(t.line([seg("DATASET  ", "muted"), seg(`${s.datasetSamples} independent samples; repeated-trial reliability is not reported`)]));
+  } else if (s.uniformK === false) {
     out.push(t.line([seg("RELIABILITY  ", "muted"), seg(`Mixed trial counts (${s.trialCounts?.join(", ")}); no single pass^k`, "unjudged")]));
     for (const group of s.byTrialCount ?? []) out.push(t.line([seg(`pass^${group.k} ${pct(group.passRate)} · ${group.allPassed}/${group.cases} cases passed every run`, "muted")], 2));
   } else if (s.k > 1) out.push(t.line([seg("RELIABILITY  ", "muted"), seg(`pass@1 ${pct(s.passAt1)} · pass^${s.k} ${pct(s.passHatK)} over ${s.runs} runs`)]));

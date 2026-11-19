@@ -52,11 +52,12 @@ export function match(value: unknown, matcher: Matcher): MatchOutcome {
 }
 
 /** Reads a dot path (`a.b.0.c`) from a value. An empty path returns the value. */
-export function getPath(value: unknown, path: string): unknown {
+export function getPath(value: unknown, path: string, ownOnly = false): unknown {
   if (!path) return value;
   let cur: unknown = value;
   for (const key of path.split(".")) {
     if (cur === null || typeof cur !== "object") return undefined;
+    if (ownOnly && !Object.prototype.hasOwnProperty.call(cur, key)) return undefined;
     cur = (cur as Record<string, unknown>)[key];
   }
   return cur;

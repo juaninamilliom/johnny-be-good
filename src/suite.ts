@@ -57,7 +57,9 @@ export const CaseSchema = z
     task: z.string().optional(),
     /** Offline: one recorded trace, or several runs of the same task. */
     trace: z.string().optional(),
-    traces: z.array(z.string()).optional(),
+    traces: z.union([z.array(z.string()), z.object({ jsonl: z.string().min(1) }).strict()]).optional(),
+    /** Expanded dataset sample provenance; preserved by artifact replay. */
+    sampleSource: z.object({ caseId: z.string(), path: z.string(), line: z.number().int().positive() }).strict().optional(),
     /** Online: how many times the adapter runs this case. */
     runs: z.number().int().positive().optional(),
     expect: z.array(AssertionSchema).default([]),

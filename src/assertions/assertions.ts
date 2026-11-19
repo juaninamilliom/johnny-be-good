@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { toolCalls, totalTokens, type ToolCallStep, type Trace } from "../trace/schema.js";
-import { getPath, match, MatcherSchema, preview } from "./matchers.js";
+import { getPath, match, MatcherSchema, MatcherObjectSchema, preview } from "./matchers.js";
 import { ExpectedFindingsSchema, checkExpectedFindings } from "./findings.js";
 
 const ArgsSchema = z.record(z.string(), MatcherSchema);
@@ -17,6 +17,7 @@ export const AssertionSchema = z.union([
   z.object({ maxCostUsd: z.number().nonnegative() }).strict(),
   z.object({ noToolErrors: z.literal(true), except: z.array(z.string()).optional() }).strict(),
   z.object({ final: MatcherSchema }).strict(),
+  z.object({ field: z.object({ from: z.enum(["final", "meta"]), path: z.string() }).extend(MatcherObjectSchema.shape).strict() }).strict(),
   z.object({ expectedFindings: ExpectedFindingsSchema }).strict(),
 ]);
 export type Assertion = z.infer<typeof AssertionSchema>;
@@ -87,6 +88,20 @@ export function runAssertion(trace: Trace, a: Assertion): AssertionResult {
         ? { detail: `${errored.length} error(s): ${errored.slice(0, 5).map((c) => `${c.name}: ${preview(c.result?.content, 80)}`).join("; ")}${errored.length > 5 ? `; and ${errored.length - 5} more` : ""}` }
         : {}),
     };
+  }
+
+  if ("field" in a) {
+    const { from, path, ...matcher } = a.field;
+    const label = `field ${from}.${path}`;
+    let root: unknown = trace.meta;
+    if (from === "final") {
+      try { root = JSON.parse(trace.final ?? ""); }
+      catch { return { kind: "field", label, passed: false, detail: `final answer is not JSON: ${(trace.final ?? "").slice(0, 80)}` }; }
+    }
+    const value = getPath(root, path, true);
+    if (value === undefined && matcher.exists !== false) return { kind: "field", label, passed: false, detail: `missing path: ${from}.${path}` };
+    const result = match(value, matcher);
+    return { kind: "field", label, passed: result.ok, ...(result.why ? { detail: `${from}.${path}: ${result.why}` } : {}) };
   }
 
   if ("final" in a) {

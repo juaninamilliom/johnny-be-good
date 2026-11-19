@@ -12,3 +12,5 @@ export { calibrate, loadLabels, formatCalibration, type CalibrationReport } from
 
 export { createArtifactStore, replayExperiment, fingerprint, ArtifactStore, type ExperimentManifest, type ArtifactOptions } from "./runner/artifacts.js";
 export { calibrateHeldOut, formatHeldOutCalibration, type HeldOutCalibrationReport } from "./calibrate/calibrate.js";
+
+export { loadRecordedDataset } from "./runner/dataset.js";
