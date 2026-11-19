@@ -1,0 +1,17 @@
+suite: http-app-contract
+adapter:
+  kind: command
+  command: node adapter.mjs
+  timeoutMs: 35000
+judges:
+  jev: false
+  llm: false
+cases:
+  - id: two-plus-two
+    task: What is 2 + 2? Reply with only the number.
+    expect:
+      - final: { equals: "4" }
+  - id: three-plus-three
+    task: What is 3 + 3? Reply with only the number.
+    expect:
+      - final: { equals: "6" }

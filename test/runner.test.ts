@@ -31,9 +31,9 @@ describe("runner", () => {
     expect(weather.runs.map((x) => x.status)).toEqual(["pass", "fail", "pass"]);
     expect(weather.passRate).toBeCloseTo(2 / 3);
     expect(r.cases.find((c) => c.id === "polite")!.status).toBe("unjudged");
-    expect(r.summary).toMatchObject({ cases: 2, failed: 1, unjudged: 1, k: 3, passHatK: 0 });
+    expect(r.summary).toMatchObject({ cases: 2, failed: 1, unjudged: 1, k: 0, uniformK: false, trialCounts: [1, 3], passHatK: 0 });
     expect(exitCode(r)).toBe(1);
-    expect(formatResult(r)).toContain("pass^3 0% over 4 runs");
+    expect(formatResult(r)).not.toContain("pass^3 0% over 4 runs");
   });
 
   it("applies suite defaults and judges rubric questions", async () => {

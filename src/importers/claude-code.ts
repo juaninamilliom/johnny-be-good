@@ -22,7 +22,8 @@ type Block = { type?: string; [key: string]: unknown };
 export function importClaudeCode(jsonl: string, opts: ClaudeCodeImportOptions = {}): Trace {
   const steps: Step[] = [];
   const callsById = new Map<string, ToolCallStep>();
-  const usageSeen = new Set<string>();
+  const usageSeen = new Map<string, Record<string, number>>();
+  const assistantMessages = new Set<string>();
   const usage: Usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
   let task: string | undefined;
   let model: string | undefined;
@@ -65,12 +66,19 @@ export function importClaudeCode(jsonl: string, opts: ClaudeCodeImportOptions = 
     if (rec.type === "assistant") {
       model ??= message.model;
       const usageKey = message.id ?? str(rec.uuid) ?? `line-${i}`;
-      if (message.usage && !usageSeen.has(usageKey)) {
-        usageSeen.add(usageKey);
-        usage.inputTokens += num(message.usage.input_tokens);
-        usage.outputTokens += num(message.usage.output_tokens);
-        usage.cacheReadTokens += num(message.usage.cache_read_input_tokens);
-        usage.cacheWriteTokens += num(message.usage.cache_creation_input_tokens);
+      assistantMessages.add(usageKey);
+      if (message.usage) {
+        const recorded = usageSeen.get(usageKey) ?? {};
+        const fields = {input_tokens: "inputTokens", output_tokens: "outputTokens", cache_read_input_tokens: "cacheReadTokens", cache_creation_input_tokens: "cacheWriteTokens"} as const;
+        for (const [field, total] of Object.entries(fields)) {
+          const value = message.usage[field];
+          if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) continue;
+          const previous = recorded[field] ?? 0;
+          // Transcript blocks may repeat cumulative usage or provide it in later chunks.
+          usage[total] += Math.max(previous, value) - previous;
+          recorded[field] = Math.max(previous, value);
+        }
+        usageSeen.set(usageKey, recorded);
       }
       for (const block of blocks(message.content)) {
         if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
@@ -111,6 +119,7 @@ export function importClaudeCode(jsonl: string, opts: ClaudeCodeImportOptions = 
     id: opts.id ?? sessionId ?? "claude-code-run",
     steps,
     usage,
+    meta: { usageProvided: assistantMessages.size > 0 && [...assistantMessages].every(key => usageSeen.get(key)?.input_tokens !== undefined && usageSeen.get(key)?.output_tokens !== undefined) },
     source: { kind: "claude-code", ...(opts.path ? { path: opts.path } : {}) },
   };
   if (task !== undefined) trace.task = task;
@@ -136,8 +145,4 @@ function resultText(content: unknown): string {
 
 function str(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
-}
-
-function num(v: unknown): number {
-  return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }

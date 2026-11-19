@@ -13,26 +13,57 @@ export interface ProcessResult {
 
 export type Spawner = (cmd: string, args: string[], opts: { cwd: string; env: NodeJS.ProcessEnv; input: string; timeoutMs: number; shell: boolean }) => Promise<ProcessResult>;
 
+const MAX_STDOUT = 8 * 1024 * 1024;
+const MAX_STDERR = 1024 * 1024;
+/** Run only the process group we created; bounded output and escalation prevent stuck CI. */
 export const defaultSpawner: Spawner = (cmd, args, opts) =>
   new Promise((resolvePromise, reject) => {
-    const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env, shell: opts.shell, stdio: ["pipe", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGTERM");
-    }, opts.timeoutMs);
-    child.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
-    child.stderr.on("data", (d: Buffer) => (stderr += d.toString()));
-    child.on("error", (err) => {
-      clearTimeout(timer);
-      reject(err);
+    const grouped = process.platform !== "win32";
+    const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env, shell: opts.shell, detached: grouped, stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "", stderr = "", stdoutBytes = 0, stderrBytes = 0;
+    let timedOut = false, failure: Error | undefined, settled = false;
+    let escalation: ReturnType<typeof setTimeout> | undefined;
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    const signal = (sig: NodeJS.Signals) => {
+      try {
+        if (grouped && child.pid) process.kill(-child.pid, sig);
+        else child.kill(sig);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") failure ??= new Error("Could not stop the adapter process");
+      }
+    };
+    const finish = (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer); clearTimeout(escalation); clearTimeout(deadline);
+      if (failure) reject(failure);
+      else resolvePromise({ stdout, stderr, code, timedOut });
+    };
+    const stop = () => {
+      if (escalation || settled) return;
+      signal("SIGTERM");
+      escalation = setTimeout(() => signal("SIGKILL"), 250);
+      deadline = setTimeout(() => {
+        failure ??= new Error(timedOut ? "Adapter timed out and did not close after termination" : "Adapter did not close after termination");
+        child.stdin.destroy(); child.stdout.destroy(); child.stderr.destroy(); child.unref(); finish(null);
+      }, 1500);
+    };
+    const timer = setTimeout(() => { timedOut = true; stop(); }, opts.timeoutMs);
+    child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (data: string) => {
+      stdoutBytes += Buffer.byteLength(data);
+      if (stdoutBytes > MAX_STDOUT) { failure ??= new Error("Adapter stdout exceeded 8 MiB"); stop(); }
+      else stdout += data;
     });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      resolvePromise({ stdout, stderr, code, timedOut });
+    child.stderr.on("data", (data: string) => {
+      stderrBytes += Buffer.byteLength(data);
+      if (stderrBytes > MAX_STDERR) { failure ??= new Error("Adapter stderr exceeded 1 MiB"); stop(); }
+      else stderr += data;
     });
+    // EPIPE is expected if the adapter exits before reading the task. Other I/O errors are visible.
+    child.stdin.on("error", (error: NodeJS.ErrnoException) => { if (error.code !== "EPIPE") { failure ??= error; stop(); } });
+    child.on("error", error => { failure = error; finish(null); });
+    child.on("close", finish);
     child.stdin.end(opts.input);
   });
 

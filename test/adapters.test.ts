@@ -40,3 +40,21 @@ describe("adapters", () => {
     await expect(adapterProvider(AdapterConfigSchema.parse({ kind: "command", command: "x" }), ".", quiet)(CaseSchema.parse({ id: "n" }), 0)).rejects.toThrow(/no task/);
   });
 });
+
+// Exercise real subprocess boundaries with synthetic programs only.
+describe("adapter process boundaries", () => {
+  it("terminates an adapter that ignores SIGTERM within a bounded interval", async () => {
+    const started = Date.now();
+    const r = await defaultSpawner(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], { cwd: process.cwd(), env: process.env, input: "", timeoutMs: 150, shell: false });
+    expect(r.timedOut).toBe(true);
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+  it("bounds captured output instead of accumulating without limit", async () => {
+    await expect(defaultSpawner(process.execPath, ["-e", "process.stdout.write('x'.repeat(9*1024*1024))"], { cwd: process.cwd(), env: process.env, input: "", timeoutMs: 5000, shell: false })).rejects.toThrow("stdout exceeded 8 MiB");
+  });
+  it("reports spawn errors and handles a child closing stdin early", async () => {
+    await expect(defaultSpawner("johnny-be-good-nonexistent-command", [], { cwd: process.cwd(), env: process.env, input: "", timeoutMs: 1000, shell: false })).rejects.toThrow();
+    const r = await defaultSpawner(process.execPath, ["-e", "process.exit(0)"], { cwd: process.cwd(), env: process.env, input: "x".repeat(1024*1024), timeoutMs: 1000, shell: false });
+    expect(r.code).toBe(0);
+  });
+});
